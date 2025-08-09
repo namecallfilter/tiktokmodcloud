@@ -1,0 +1,29 @@
+{
+	"name": "tiktokmodcloud",
+	"version": "0.1.0",
+	"description": "",
+	"type": "module",
+	"main": "index.ts",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/namecallfilter/tiktokmodcloud.git"
+	},
+	"author": "",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/namecallfilter/tiktokmodcloud/issues"
+	},
+	"homepage": "https://github.com/namecallfilter/tiktokmodcloud#readme",
+	"dependencies": {
+		"dotenv": "^17.2.1",
+		"@ossiana/node-libcurl": "^1.8.3",
+		"telegram": "^2.26.22"
+	},
+	"devDependencies": {
+		"@types/node": "^24.2.1",
+		"readline": "^1.3.0"
+	}
+}
