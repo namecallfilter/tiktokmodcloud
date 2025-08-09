@@ -26,3 +26,5 @@ if (arg === "plugin") {
 	const [downloadLink, referer] = await getPluginDownload(messages);
 	await downloadFile(downloadLink, referer);
 }
+
+client.disconnect();
