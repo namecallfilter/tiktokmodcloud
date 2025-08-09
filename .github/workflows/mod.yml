@@ -41,7 +41,7 @@ jobs:
             - name: Upload APK artifact
               uses: actions/upload-artifact@v4
               with:
-                  name: ${{ steps.get_info.outputs.FILENAME }}
+                  name: mod-apk
                   path: ${{ steps.get_info.outputs.FILE_PATH }}
 
             - name: Create Release
