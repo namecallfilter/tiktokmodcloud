@@ -26,7 +26,7 @@ jobs:
 
             - name: Download TikTok Mod APK
               run: |
-                  tsx .\index.ts mod
+                  tsx index.ts mod
 
     release:
         runs-on: ubuntu-latest
