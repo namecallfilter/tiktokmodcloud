@@ -1,4 +1,4 @@
-name: Download TikTok Mod APK and Create Release
+name: Download and Release TikTok Mod and Plugin
 
 on:
     schedule:
@@ -9,7 +9,7 @@ permissions:
     contents: write
 
 jobs:
-    download-and-release:
+    download-and-release-mod:
         runs-on: ubuntu-latest
         env:
             APP_ID: ${{ secrets.APP_ID }}
@@ -51,4 +51,44 @@ jobs:
                   tag_name: v${{ steps.get_info.outputs.VERSION }}
                   name: TikTok Mod v${{ steps.get_info.outputs.VERSION }}
                   files: ${{ steps.get_info.outputs.FILE_PATH }}
+                  body: ""
+
+    download-and-release-plugin:
+        runs-on: ubuntu-latest
+        needs: download-and-release-mod
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install dependencies
+              run: |
+                  npm install
+                  npm install -g tsx
+
+            - name: Download TikTok Mod Plugin
+              run: |
+                  tsx index.ts plugin
+
+            - name: Extract version and file path
+              id: get_plugin_info
+              run: |
+                  FILE_PATH=$(find . -type f -name "*.apk" | head -n 1)
+                  echo "FILE_PATH=${FILE_PATH}" >> $GITHUB_OUTPUT
+                  FILENAME=$(basename "${FILE_PATH}")
+                  echo "FILENAME=${FILENAME}" >> $GITHUB_OUTPUT
+                  echo "VERSION=${FILENAME%%_*}" >> $GITHUB_OUTPUT
+
+            - name: Upload Plugin APK artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: plugin-apk
+                  path: ${{ steps.get_plugin_info.outputs.FILE_PATH }}
+
+            - name: Create Plugin Release
+              id: create_plugin_release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.get_plugin_info.outputs.VERSION }}
+                  name: TikTok Plugin v${{ steps.get_plugin_info.outputs.VERSION }}
+                  files: ${{ steps.get_plugin_info.outputs.FILE_PATH }}
                   body: ""
