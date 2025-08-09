@@ -1,8 +1,6 @@
 import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import dotenv from "dotenv";
-import fs from "fs";
-import { LibCurl } from "@ossiana/node-libcurl";
 // import readline from "readline";
 
 dotenv.config();
