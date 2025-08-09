@@ -9,7 +9,7 @@ permissions:
     contents: write
 
 jobs:
-    build-and-release:
+    download-and-release:
         runs-on: ubuntu-latest
         env:
             APP_ID: ${{ secrets.APP_ID }}
@@ -29,19 +29,20 @@ jobs:
               run: |
                   tsx index.ts mod
 
-            - name: Upload APK artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: mod-apk
-                  path: ./**/*.apk
-
             - name: Extract version and file path
               id: get_info
               run: |
                   FILE_PATH=$(find . -type f -name "*.apk" | head -n 1)
                   echo "FILE_PATH=${FILE_PATH}" >> $GITHUB_OUTPUT
                   FILENAME=$(basename "${FILE_PATH}")
+                  echo "FILENAME=${FILENAME}" >> $GITHUB_OUTPUT
                   echo "VERSION=${FILENAME%%_*}" >> $GITHUB_OUTPUT
+
+            - name: Upload APK artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.get_info.outputs.FILENAME }}
+                  path: ${{ steps.get_info.outputs.FILE_PATH }}
 
             - name: Create Release
               id: create_release
@@ -50,3 +51,4 @@ jobs:
                   tag_name: v${{ steps.get_info.outputs.VERSION }}
                   name: TikTok Mod v${{ steps.get_info.outputs.VERSION }}
                   files: ${{ steps.get_info.outputs.FILE_PATH }}
+                  body: ""
