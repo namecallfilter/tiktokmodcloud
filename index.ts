@@ -11,11 +11,11 @@ const messages = await client.getMessages(channel, {
 });
 
 {
-	const [modDownloadLink, referer] = await getModDownload(messages);
-	await downloadFile(modDownloadLink, referer);
+	const [downloadLink, referer] = await getModDownload(messages);
+	await downloadFile(downloadLink, referer);
 }
 
 {
-	const [pluginDownloadLink, referer] = await getPluginDownload(messages);
-	await downloadFile(pluginDownloadLink, referer);
+	const [downloadLink, referer] = await getPluginDownload(messages);
+	await downloadFile(downloadLink, referer);
 }
