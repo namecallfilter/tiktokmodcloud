@@ -55,7 +55,11 @@ jobs:
 
     download-and-release-plugin:
         runs-on: ubuntu-latest
-        needs: download-and-release-mod
+        env:
+            APP_ID: ${{ secrets.APP_ID }}
+            API_HASH: ${{ secrets.API_HASH }}
+            SESSION: ${{ secrets.SESSION }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
