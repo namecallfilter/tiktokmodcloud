@@ -1,0 +1,57 @@
+name: Download TikTok Mod APK and Create Release
+
+on:
+    schedule:
+        - cron: "0 */6 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    download:
+        runs-on: ubuntu-latest
+        env:
+            APP_ID: ${{ secrets.APP_ID }}
+            API_HASH: ${{ secrets.API_HASH }}
+            SESSION: ${{ secrets.SESSION }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install dependencies
+              run: |
+                  npm install
+                  npm install -g tsx
+
+            - name: Download TikTok Mod APK
+              run: |
+                  tsx .\index.ts mod
+
+    release:
+        runs-on: ubuntu-latest
+        needs: download
+        steps:
+            - name: Download APK artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: mod-apk
+                  path: ./apks/
+
+            - name: Extract version and file path
+              id: get_info
+              run: |
+                  FILE_PATH=$(find ./apks -type f -name "*.apk" | head -n 1)
+                  echo "FILE_PATH=${FILE_PATH}" >> $GITHUB_OUTPUT
+                  FILENAME=$(basename "${FILE_PATH}")
+                  echo "VERSION=${FILENAME%%_*}" >> $GITHUB_OUTPUT
+
+            - name: Create Release
+              id: create_release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.get_info.outputs.VERSION }}
+                  name: TikTok Mod v${{ steps.get_info.outputs.VERSION }}
+                  files: ${{ steps.get_info.outputs.FILE_PATH }}
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
