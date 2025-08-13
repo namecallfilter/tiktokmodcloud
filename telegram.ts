@@ -1,7 +1,7 @@
+import dotenv from "dotenv";
 import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
-import dotenv from "dotenv";
-import { request } from "./utils";
+
 // import readline from "readline";
 
 dotenv.config();
@@ -39,7 +39,10 @@ export async function getModDownload() {
 	// });
 	// console.log("Redirect URL:", redirectUrl);
 
-	const mirrorUrl = await request("https://apkw.ru/en/download/tik-tok-mod/", "https://apkw.ru/en/tiktok-mod-27-1-3-for-android/")
+	const mirrorUrl = await fetch("https://apkw.ru/en/download/tik-tok-mod/", {
+		referrer: "https://apkw.ru/en/tiktok-mod/",
+	})
+		.then((response) => response.text())
 		.then((text) => {
 			const match = text.match(/href='[^']*?filename=([^'&]+)[^>]*?>MIRROR 1<\/a>/);
 			return match ? match[1] : null;
@@ -52,10 +55,12 @@ export async function getModDownload() {
 		});
 	console.log("Mirror URL:", mirrorUrl);
 
-	const modsfireUrl = await request(mirrorUrl!).then((text) => {
-		const match = text.match(locationRegex);
-		return match ? match[1] : null;
-	});
+	const modsfireUrl = await fetch(mirrorUrl!)
+		.then((response) => response.text())
+		.then((text) => {
+			const match = text.match(locationRegex);
+			return match ? match[1] : null;
+		});
 
 	if (!modsfireUrl) {
 		throw new Error("Failed to retrieve Modsfire URL");
@@ -79,7 +84,22 @@ export async function getPluginDownload() {
 	// const urlShortener = await latestPlugin.getButtons().then((b) => b?.[b.length - 1]?.[0]?.url);
 	// console.log("URL Shortener:", urlShortener);
 
-	const mirrorUrl = await request("https://apkw.ru/en/download/tik-tok-plugin/", "https://apkw.ru/en/download/tik-tok-mod/")
+	// const mirrorUrl = await request("https://apkw.ru/en/download/tik-tok-plugin/", "https://apkw.ru/en/download/tik-tok-mod/")
+	// 	.then((text) => {
+	// 		const match = text.match(/href='[^']*?filename=([^'&]+)[^>]*?>MIRROR<\/a>/);
+	// 		return match ? match[1] : null;
+	// 	})
+	// 	.then((filename) => {
+	// 		if (filename) {
+	// 			return `https://recut.ru/${filename}`;
+	// 		}
+	// 		return null;
+	// 	});
+
+	const mirrorUrl = await fetch("https://apkw.ru/en/download/tik-tok-plugin/", {
+		referrer: "https://apkw.ru/en/download/tik-tok-mod/",
+	})
+		.then((response) => response.text())
 		.then((text) => {
 			const match = text.match(/href='[^']*?filename=([^'&]+)[^>]*?>MIRROR<\/a>/);
 			return match ? match[1] : null;
@@ -93,10 +113,12 @@ export async function getPluginDownload() {
 
 	console.log("Mirror URL:", mirrorUrl);
 
-	const modsfireUrl = await request(mirrorUrl!).then((text) => {
-		const match = text.match(locationRegex);
-		return match ? match[1] : null;
-	});
+	const modsfireUrl = await fetch(mirrorUrl!)
+		.then((response) => response.text())
+		.then((text) => {
+			const match = text.match(locationRegex);
+			return match ? match[1] : null;
+		});
 	console.log("Modsfire URL:", modsfireUrl);
 
 	if (!modsfireUrl) {

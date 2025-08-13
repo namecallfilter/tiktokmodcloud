@@ -1,111 +1,65 @@
-import { LibCurl } from "@ossiana/node-libcurl";
-import { createWriteStream, existsSync, mkdirSync, unlinkSync } from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { ReadableStream } from "node:stream/web";
 
-export async function request(url: string, referer: string | null = null) {
-	if (!url || typeof url !== "string") {
-		throw new Error(`Invalid URL provided to request function: ${url}`);
-	}
-	const curl = new LibCurl();
-	curl.open("GET", url);
-
-	if (referer) {
-		curl.setRequestHeader("Referer", referer);
-	}
-
-	curl.setRequestHeader(
-		"User-Agent",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-	);
-	curl.setRedirect(true);
-	curl.setTimeout(30, 1800);
-
-	await curl.send();
-	const statusCode = curl.getResponseStatus();
-
-	if (statusCode >= 200 && statusCode < 300) {
-		return curl.getResponseString();
-	} else {
-		throw new Error(`Request failed with HTTP status code: ${statusCode}`);
-	}
-}
-
-export async function downloadFile(downloadUrl: string, referer: string, outputDir: string = "./apks"): Promise<string> {
+export async function downloadFile(
+	downloadUrl: string,
+	referer: string,
+	outputDir: string = "./apks",
+): Promise<string> {
 	console.log(`Starting download from ${downloadUrl}`);
+	const response = await fetch(downloadUrl, {
+		referrer: referer,
+	});
 
-	let outputPath: string | null = null;
-	const curl = new LibCurl();
-
-	try {
-		curl.open("GET", downloadUrl);
-		curl.setRequestHeader("Referer", referer);
-		curl.setRequestHeader(
-			"User-Agent",
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-		);
-		curl.setRedirect(true);
-		curl.setTimeout(30, 1800);
-
-		console.log("Downloading... please wait.");
-
-		await curl.send();
-		const statusCode = curl.getResponseStatus();
-
-		if (statusCode >= 200 && statusCode < 300) {
-			let filename: string | null = null;
-			const headers = curl.getResponseHeadersMap();
-			const contentDisposition = headers.get("content-disposition");
-
-			if (contentDisposition) {
-				const match = /filename="?([^"]+)"?/.exec(contentDisposition);
-				if (match && match[1]) {
-					filename = path.basename(match[1]);
-				}
-			}
-
-			if (!filename) {
-				const finalUrl = curl.getLastEffectiveUrl();
-				filename = path.basename(new URL(finalUrl).pathname);
-			}
-
-			if (!filename || filename === "/") {
-				throw new Error("Could not determine filename from response headers or URL.");
-			}
-
-			if (!existsSync(outputDir)) {
-				mkdirSync(outputDir, { recursive: true });
-			}
-			outputPath = path.join(outputDir, filename);
-
-			console.log(`\nDownload finished successfully. Saving to: ${outputPath}`);
-
-			const responseBody = curl.getResponseBody();
-			const fileStream = createWriteStream(outputPath);
-
-			await new Promise((resolve, reject) => {
-				fileStream.write(responseBody, (err) => {
-					if (err) {
-						reject(err);
-					} else {
-						fileStream.end(resolve);
-					}
-				});
-			});
-
-			console.log(`File saved successfully.`);
-			return outputPath;
-		} else {
-			throw new Error(`Download failed with HTTP status code: ${statusCode}`);
-		}
-	} catch (error: any) {
-		console.error("\nAn error occurred during download:", error.message);
-
-		if (outputPath && existsSync(outputPath)) {
-			try {
-				unlinkSync(outputPath);
-			} catch (e) {}
-		}
-
-		throw error;
+	if (!response.ok) {
+		throw new Error(`Failed to download file: ${response.statusText}`);
 	}
+
+	const totalSize = Number(response.headers.get("content-length") || 0);
+	if (totalSize === 0) {
+		console.log("Warning: Content-Length header not found. Cannot display progress.");
+	}
+
+	const finalUrl = response.url;
+	const filename = new URL(finalUrl).pathname.split("/").pop() || "downloaded_file";
+	const filePath = path.join(outputDir, filename);
+
+	fs.mkdirSync(outputDir, { recursive: true });
+
+	const fileStream = fs.createWriteStream(filePath);
+
+	if (!response.body) {
+		throw new Error("Response body is null");
+	}
+
+	const sourceStream = Readable.fromWeb(response.body as ReadableStream<any>);
+
+	let downloadedSize = 0;
+	let lastLoggedPercentage = -1;
+
+	sourceStream.on("data", (chunk) => {
+		downloadedSize += chunk.length;
+		if (totalSize > 0) {
+			const percentage = Math.floor((downloadedSize / totalSize) * 100);
+			if (percentage >= lastLoggedPercentage + 1) {
+				process.stdout.write(`\rDownloading... ${percentage}%`);
+				lastLoggedPercentage = percentage;
+			}
+		}
+	});
+
+	sourceStream.pipe(fileStream);
+
+	return new Promise((resolve, reject) => {
+		fileStream.on("finish", () => {
+			process.stdout.write(`\rFile downloaded successfully: ${filePath}\n`);
+			resolve(filePath);
+		});
+		fileStream.on("error", (error) => {
+			console.error(`\nError downloading file: ${error.message}`);
+			reject(error);
+		});
+	});
 }
