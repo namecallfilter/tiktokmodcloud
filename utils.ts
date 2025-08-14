@@ -43,7 +43,7 @@ export async function downloadFile(
 		downloadedSize += chunk.length;
 		if (totalSize > 0) {
 			const percentage = Math.floor((downloadedSize / totalSize) * 100);
-			if (percentage >= lastLoggedPercentage + 1) {
+			if (percentage !== lastLoggedPercentage) {
 				process.stdout.write(`\rDownloading... ${percentage}%`);
 				lastLoggedPercentage = percentage;
 			}
