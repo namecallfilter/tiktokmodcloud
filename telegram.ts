@@ -4,7 +4,7 @@ import { StringSession } from "telegram/sessions";
 
 // import readline from "readline";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const locationRegex = /document\.location\.href\s*=\s*['"](.*?)['"]/;
 

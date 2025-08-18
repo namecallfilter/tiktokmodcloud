@@ -4,7 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { ReadableStream } from "node:stream/web";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export async function downloadFile(
 	downloadUrl: string,
