@@ -12,7 +12,7 @@ jobs:
     download-and-release-mod:
         runs-on: ubuntu-latest
         env:
-            CAPMONSTER_KEY: ${{ secrets.CAPMONSTER_KEY }}
+            CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
             APP_ID: ${{ secrets.APP_ID }}
             API_HASH: ${{ secrets.API_HASH }}
             SESSION: ${{ secrets.SESSION }}
@@ -57,7 +57,7 @@ jobs:
     download-and-release-plugin:
         runs-on: ubuntu-latest
         env:
-            CAPMONSTER_KEY: ${{ secrets.CAPMONSTER_KEY }}
+            CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
             APP_ID: ${{ secrets.APP_ID }}
             API_HASH: ${{ secrets.API_HASH }}
             SESSION: ${{ secrets.SESSION }}
