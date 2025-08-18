@@ -1,4 +1,3 @@
-import { CapMonsterCloudClientFactory, ClientOptions, TurnstileRequest } from "@zennolab_com/capmonstercloud-client";
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -29,7 +28,8 @@ export async function downloadFile(
 
 	const totalSize = Number(response.headers.get("content-length") || 0);
 	if (totalSize === 0) {
-		console.log("Warning: Content-Length header not found. Cannot display progress.");
+		// console.log("Warning: Content-Length header not found. Cannot display progress.");
+		throw new Error("Content-Length header not found, might not be apk download");
 	}
 
 	const finalUrl = response.url;
@@ -100,35 +100,96 @@ function extractDataFromHtml(html: string) {
 		throw new Error("Failed to extract required CSRF token, File ID, or Sitekey from the page.");
 	}
 
-	console.log(`Successfully extracted CSRF token: ${csrfToken}, and File ID: ${fileId}`);
+	console.log(`Successfully extracted Site key: ${sitekey}, CSRF token: ${csrfToken}, and File ID: ${fileId}`);
 	return { csrfToken, fileId, sitekey };
 }
 
 async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string> {
-	const capmonsterKey = process.env.CAPMONSTER_KEY;
-	if (!capmonsterKey) {
-		throw new Error("CAPMONSTER_KEY environment variable is not set.");
+	const capsolverKey = process.env.CAPSOLVER_KEY;
+	if (!capsolverKey) {
+		throw new Error("CAPSOLVER_KEY environment variable is not set.");
 	}
 
-	const cmcClient = CapMonsterCloudClientFactory.Create(new ClientOptions({ clientKey: capmonsterKey }));
+	console.log("Checking Capsolver account balance...");
 
-	console.log("Solving Turnstile CAPTCHA...");
-	const turnstileRequest = new TurnstileRequest({
-		websiteURL: pageUrl,
-		websiteKey: sitekey,
-		userAgent:
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/5.37.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-	});
+	try {
+		const balanceResponse = await fetch("https://api.capsolver.com/getBalance", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ clientKey: capsolverKey }),
+		});
+		const balanceData = await balanceResponse.json();
+		if (balanceData.errorId) {
+			console.error(`Failed to get balance: ${balanceData.errorDescription}`);
+		} else {
+			console.log(`Capsolver Balance: $${balanceData.balance}`);
+		}
 
-	const solveResponse = await cmcClient.Solve(turnstileRequest);
-	const solutionToken = solveResponse?.solution?.token;
+		console.log("Creating Turnstile CAPTCHA task with Capsolver...");
+		const createTaskPayload = {
+			clientKey: capsolverKey,
+			task: {
+				type: "AntiTurnstileTaskProxyLess",
+				websiteKey: sitekey,
+				websiteURL: pageUrl,
+			},
+		};
 
-	if (!solutionToken) {
-		throw new Error("Failed to obtain a solution token from CapMonster.");
+		const createTaskResponse = await fetch("https://api.capsolver.com/createTask", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(createTaskPayload),
+		});
+
+		const createTaskData = await createTaskResponse.json();
+
+		if (createTaskData.errorId || !createTaskData.taskId) {
+			throw new Error(`Failed to create task: ${createTaskData.errorDescription || "No taskId returned"}`);
+		}
+
+		const taskId = createTaskData.taskId;
+		console.log(`Task created successfully with ID: ${taskId}`);
+
+		const getResultPayload = {
+			clientKey: capsolverKey,
+			taskId: taskId,
+		};
+
+		while (true) {
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+
+			console.log("Polling for task result...");
+			const getResultResponse = await fetch("https://api.capsolver.com/getTaskResult", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(getResultPayload),
+			});
+
+			const getResultData = await getResultResponse.json();
+
+			if (getResultData.errorId) {
+				throw new Error(`Failed to get task result: ${getResultData.errorDescription}`);
+			}
+
+			if (getResultData.status === "ready") {
+				console.log("Successfully obtained CAPTCHA solution token.");
+				return getResultData.solution.token;
+			}
+
+			if (getResultData.status === "failed") {
+				throw new Error(`Captcha solve failed: ${JSON.stringify(getResultData)}`);
+			}
+		}
+	} catch (error) {
+		console.error("An error occurred during the CAPTCHA solving process:", error);
+		throw error;
 	}
-
-	console.log("Successfully obtained CAPTCHA solution token.");
-	return solutionToken;
 }
 
 export async function getVerificationCookie(pageUrl: string): Promise<string> {
@@ -165,7 +226,6 @@ export async function getVerificationCookie(pageUrl: string): Promise<string> {
 
 	const responseData = await verifyResponse.json();
 
-	// 5. Check for success and return the final cookie
 	if (responseData.success) {
 		const finalCookie = verifyResponse.headers.get("Set-Cookie");
 		if (!finalCookie) {
