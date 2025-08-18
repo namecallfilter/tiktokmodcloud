@@ -18,7 +18,6 @@
 	},
 	"homepage": "https://github.com/namecallfilter/tiktokmodcloud#readme",
 	"dependencies": {
-		"@zennolab_com/capmonstercloud-client": "2.2.0",
 		"dotenv": "17.2.1",
 		"telegram": "2.26.22"
 	},
