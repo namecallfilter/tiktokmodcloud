@@ -1,5 +1,4 @@
 import { CapMonsterCloudClientFactory, ClientOptions, TurnstileRequest } from "@zennolab_com/capmonstercloud-client";
-import * as cheerio from "cheerio";
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
