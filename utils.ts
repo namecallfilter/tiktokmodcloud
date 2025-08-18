@@ -110,8 +110,6 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 		throw new Error("CAPSOLVER_KEY environment variable is not set.");
 	}
 
-	console.log("Checking Capsolver account balance...");
-
 	try {
 		const balanceResponse = await fetch("https://api.capsolver.com/getBalance", {
 			method: "POST",
@@ -146,23 +144,18 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 		});
 
 		const createTaskData = await createTaskResponse.json();
-
 		if (createTaskData.errorId || !createTaskData.taskId) {
 			throw new Error(`Failed to create task: ${createTaskData.errorDescription || "No taskId returned"}`);
 		}
 
-		const taskId = createTaskData.taskId;
-		console.log(`Task created successfully with ID: ${taskId}`);
-
 		const getResultPayload = {
 			clientKey: capsolverKey,
-			taskId: taskId,
+			taskId: createTaskData.taskId,
 		};
 
 		while (true) {
 			await new Promise((resolve) => setTimeout(resolve, 3000));
 
-			console.log("Polling for task result...");
 			const getResultResponse = await fetch("https://api.capsolver.com/getTaskResult", {
 				method: "POST",
 				headers: {
