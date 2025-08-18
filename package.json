@@ -18,12 +18,13 @@
 	},
 	"homepage": "https://github.com/namecallfilter/tiktokmodcloud#readme",
 	"dependencies": {
-		"dotenv": "^17.2.1",
-		"telegram": "^2.26.22"
+		"@zennolab_com/capmonstercloud-client": "2.2.0",
+		"dotenv": "17.2.1",
+		"telegram": "2.26.22"
 	},
 	"devDependencies": {
-		"@trivago/prettier-plugin-sort-imports": "^5.2.2",
-		"@types/node": "^24.2.1",
-		"readline": "^1.3.0"
+		"@trivago/prettier-plugin-sort-imports": "5.2.2",
+		"@types/node": "24.3.0",
+		"readline": "1.3.0"
 	}
 }
