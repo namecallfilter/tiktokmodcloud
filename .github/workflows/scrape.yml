@@ -49,7 +49,7 @@ jobs:
               id: check_release
               if: steps.get_version.outputs.VERSION
               run: |
-                  TAG_NAME="v${{ steps.get_version.outputs.VERSION }}"
+                  TAG_NAME="v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}"
                   echo "Checking for existing release with tag: ${TAG_NAME}"
 
                   if git ls-remote --tags origin | grep -q "refs/tags/${TAG_NAME}"; then
