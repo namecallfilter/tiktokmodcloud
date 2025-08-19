@@ -1,6 +1,8 @@
 import { getModDownload, getPluginDownload } from "./telegram";
 import { downloadFile, extractDataInitialPage } from "./utils";
 
+// TODO: Switch arg checking to a more elegant solution like cmd-ts
+
 const arg = process.argv[2];
 
 if (arg !== "mod" && arg !== "plugin") {
