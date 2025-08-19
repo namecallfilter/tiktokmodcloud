@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
-import { Api, TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
+
+// import { Api, TelegramClient } from "telegram";
+// import { StringSession } from "telegram/sessions";
 
 // import readline from "readline";
 
@@ -8,19 +9,19 @@ dotenv.config({ quiet: true });
 
 const locationRegex = /document\.location\.href\s*=\s*['"](.*?)['"]/;
 
-const appId = Number(process.env.APP_ID);
-const apiHash = process.env.API_HASH!;
-const stringSession = new StringSession(process.env.SESSION);
+// const appId = Number(process.env.APP_ID);
+// const apiHash = process.env.API_HASH!;
+// const stringSession = new StringSession(process.env.SESSION);
 
-export async function createClient() {
-	const client = new TelegramClient(stringSession, appId, apiHash, {
-		connectionRetries: 5,
-	});
+// export async function createClient() {
+// 	const client = new TelegramClient(stringSession, appId, apiHash, {
+// 		connectionRetries: 5,
+// 	});
 
-	await client.connect();
+// 	await client.connect();
 
-	return client;
-}
+// 	return client;
+// }
 
 export async function getModDownload() {
 	// const latestMod = messages.find((message) => {

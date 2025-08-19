@@ -1,7 +1,5 @@
-import { Api } from "telegram";
-
-import { createClient, getModDownload, getPluginDownload } from "./telegram";
-import { downloadFile, getVerificationCookie } from "./utils";
+import { getModDownload, getPluginDownload } from "./telegram";
+import { downloadFile } from "./utils";
 
 const arg = process.argv[2];
 
