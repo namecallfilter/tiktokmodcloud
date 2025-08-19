@@ -82,10 +82,22 @@ function formatCookieHeader(setCookieHeader: string): string {
 	return cookiePairs.join("; ");
 }
 
-function extractDataFromHtml(html: string) {
-	const csrfTokenMatch = html.match(/<input[^>]+name="_token"[^>]+value="([^"]+)"/);
-	const fileIdMatch = html.match(/<input[^>]+id="file_id"[^>]+value="([^"]+)"/);
-	const sitekeyMatch = html.match(/class="cf-turnstile"[^>]+data-sitekey="([^"]+)"/);
+export async function extractDataInitialPage(url: string) {
+	console.log(`Fetching initial page data from: ${url}`);
+	const pageResponse = await fetch(url);
+	if (!pageResponse.ok) {
+		throw new Error(`Failed to fetch page: ${pageResponse.status} ${pageResponse.statusText}`);
+	}
+
+	const initialCookies = pageResponse.headers.getSetCookie();
+	const cookieString = initialCookies.map((c) => c.split(";")[0]).join("; ");
+	console.log("Extracted Set-Cookie headers!");
+
+	const pageHtml = await pageResponse.text();
+
+	const csrfTokenMatch = pageHtml.match(/<input[^>]+name="_token"[^>]+value="([^"]+)"/);
+	const fileIdMatch = pageHtml.match(/<input[^>]+id="file_id"[^>]+value="([^"]+)"/);
+	const sitekeyMatch = pageHtml.match(/class="cf-turnstile"[^>]+data-sitekey="([^"]+)"/);
 
 	const csrfToken = csrfTokenMatch?.[1];
 	const fileId = fileIdMatch?.[1];
@@ -101,7 +113,7 @@ function extractDataFromHtml(html: string) {
 	}
 
 	console.log(`Successfully extracted Site key: ${sitekey}, CSRF token: ${csrfToken}, and File ID: ${fileId}`);
-	return { csrfToken, fileId, sitekey };
+	return { cookieString, csrfToken, fileId, sitekey };
 }
 
 async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string> {
@@ -188,17 +200,7 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 }
 
 export async function getVerificationCookie(pageUrl: string): Promise<string> {
-	console.log(`Fetching initial page data from: ${pageUrl}`);
-	const pageResponse = await fetch(pageUrl);
-	if (!pageResponse.ok) {
-		throw new Error(`Failed to fetch page: ${pageResponse.status} ${pageResponse.statusText}`);
-	}
-
-	const initialCookies = pageResponse.headers.getSetCookie();
-	const cookieString = initialCookies.map((c) => c.split(";")[0]).join("; ");
-	const pageHtml = await pageResponse.text();
-
-	const { csrfToken, fileId, sitekey } = extractDataFromHtml(pageHtml);
+	const { cookieString, csrfToken, fileId, sitekey } = await extractDataInitialPage(pageUrl);
 	const captchaToken = await solveTurnstile(sitekey, pageUrl);
 
 	console.log("Verifying captcha solution with the website...");

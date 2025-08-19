@@ -1,10 +1,16 @@
 import { getModDownload, getPluginDownload } from "./telegram";
-import { downloadFile } from "./utils";
+import { downloadFile, extractDataInitialPage } from "./utils";
 
 const arg = process.argv[2];
 
 if (arg !== "mod" && arg !== "plugin") {
 	console.error("Usage: tsx index.ts [mod|plugin]");
+	process.exit(1);
+}
+
+const arg2 = process.argv[3];
+if (arg2 !== "check" && arg2 !== "download") {
+	console.error("Usage: tsx index.ts [mod|plugin] [check|download]");
 	process.exit(1);
 }
 
@@ -18,12 +24,22 @@ if (arg !== "mod" && arg !== "plugin") {
 
 if (arg === "mod") {
 	const [downloadLink, referer] = await getModDownload();
-	await downloadFile(downloadLink, referer);
+	if (arg2 === "check") {
+		const { fileId } = await extractDataInitialPage(referer);
+		console.log(fileId.split("_")[0]);
+	} else {
+		await downloadFile(downloadLink, referer);
+	}
 }
 
 if (arg === "plugin") {
 	const [downloadLink, referer] = await getPluginDownload();
-	await downloadFile(downloadLink, referer);
+	if (arg2 === "check") {
+		const { fileId } = await extractDataInitialPage(referer);
+		console.log(fileId.split("_")[0]);
+	} else {
+		await downloadFile(downloadLink, referer);
+	}
 }
 
 // client.disconnect();
