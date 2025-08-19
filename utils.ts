@@ -153,8 +153,9 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 			taskId: createTaskData.taskId,
 		};
 
+		const startTime = Date.now();
 		while (true) {
-			await new Promise((resolve) => setTimeout(resolve, 3000));
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 
 			const getResultResponse = await fetch("https://api.capsolver.com/getTaskResult", {
 				method: "POST",
@@ -171,7 +172,8 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 			}
 
 			if (getResultData.status === "ready") {
-				console.log("Successfully obtained CAPTCHA solution token.");
+				const durationInSeconds = (Date.now() - startTime) / 1000;
+				console.log(`Successfully obtained CAPTCHA solution token in ${durationInSeconds.toFixed(2)} seconds.`);
 				return getResultData.solution.token;
 			}
 
