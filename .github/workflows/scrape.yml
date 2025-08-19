@@ -72,7 +72,6 @@ jobs:
                     exit 1
                   fi
 
-                  echo "Discovered APK file: ${FILE_PATH}"
                   echo "FILE_PATH=${FILE_PATH}" >> $GITHUB_OUTPUT
 
             - name: Create Release and Upload Artifact
