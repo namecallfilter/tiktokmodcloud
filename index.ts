@@ -1,20 +1,67 @@
+import { boolean, command, flag, run, subcommands } from "cmd-ts";
+
 import { getModDownload, getPluginDownload } from "./telegram";
 import { downloadFile, extractDataInitialPage } from "./utils";
 
-// TODO: Switch arg checking to a more elegant solution like cmd-ts
+const commonFlags = {
+	check: flag({
+		long: "check",
+		short: "c",
+		type: boolean,
+		description: "Check for the latest version",
+		defaultValue: () => false,
+	}),
+	download: flag({
+		long: "download",
+		short: "d",
+		type: boolean,
+		description: "Download the latest version",
+		defaultValue: () => false,
+	}),
+};
 
-const arg = process.argv[2];
+async function handleAction(getDownloadDetails: () => Promise<string[]>, args: { check: boolean; download: boolean }) {
+	if (!args.check && !args.download) {
+		console.error("Error: Please specify an action: --check (-c) or --download (-d).");
+		return;
+	}
+	if (args.check && args.download) {
+		console.error("Error: --check and --download cannot be used together.");
+		return;
+	}
 
-if (arg !== "mod" && arg !== "plugin") {
-	console.error("Usage: tsx index.ts [mod|plugin]");
-	process.exit(1);
+	if (args.check) {
+		const [, referer] = await getDownloadDetails();
+		const { fileId } = await extractDataInitialPage(referer);
+		console.log(fileId.split("_")[0]);
+	}
+
+	if (args.download) {
+		const [downloadLink, referer] = await getDownloadDetails();
+		await downloadFile(downloadLink, referer);
+	}
 }
 
-const arg2 = process.argv[3];
-if (arg2 !== "check" && arg2 !== "download") {
-	console.error("Usage: tsx index.ts [mod|plugin] [check|download]");
-	process.exit(1);
-}
+const modCommand = command({
+	name: "mod",
+	description: "Select the mod",
+	args: commonFlags,
+	handler: (args) => handleAction(getModDownload, args),
+});
+
+const pluginCommand = command({
+	name: "plugin",
+	description: "Select the plugin",
+	args: commonFlags,
+	handler: (args) => handleAction(getPluginDownload, args),
+});
+
+const app = subcommands({
+	name: "tiktokmodcloud",
+	cmds: { mod: modCommand, plugin: pluginCommand },
+});
+
+run(app, process.argv.slice(2));
 
 // const client = await createClient();
 
@@ -23,25 +70,5 @@ if (arg2 !== "check" && arg2 !== "download") {
 // 	filter: new Api.InputMessagesFilterUrl(),
 // 	limit: 10,
 // });
-
-if (arg === "mod") {
-	const [downloadLink, referer] = await getModDownload();
-	if (arg2 === "check") {
-		const { fileId } = await extractDataInitialPage(referer);
-		console.log(fileId.split("_")[0]);
-	} else {
-		await downloadFile(downloadLink, referer);
-	}
-}
-
-if (arg === "plugin") {
-	const [downloadLink, referer] = await getPluginDownload();
-	if (arg2 === "check") {
-		const { fileId } = await extractDataInitialPage(referer);
-		console.log(fileId.split("_")[0]);
-	} else {
-		await downloadFile(downloadLink, referer);
-	}
-}
 
 // client.disconnect();

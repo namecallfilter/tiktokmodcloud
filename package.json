@@ -18,6 +18,7 @@
 	},
 	"homepage": "https://github.com/namecallfilter/tiktokmodcloud#readme",
 	"dependencies": {
+		"cmd-ts": "^0.13.0",
 		"dotenv": "17.2.1",
 		"telegram": "2.26.22"
 	},
