@@ -1,4 +1,3 @@
-# A more descriptive name for the workflow
 name: Download and Release TikTok Mod & Plugin
 
 on:
@@ -36,7 +35,7 @@ jobs:
             - name: Get Latest Version from Source
               id: get_version
               run: |
-                  VERSION=$(tsx index.ts ${{ matrix.type }} check | tail -n 1)
+                  VERSION=$(tsx index.ts ${{ matrix.type }} -c | tail -n 1)
                   if [ -z "${VERSION}" ]; then
                     echo "Failed to retrieve version."
                     exit 1
@@ -64,7 +63,7 @@ jobs:
               id: download_artifact
               if: steps.check_release.outputs.continue == 'true'
               run: |
-                  tsx index.ts ${{ matrix.type }} download
+                  tsx index.ts ${{ matrix.type }} -d
 
                   FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
                   if [ -z "${FILE_PATH}" ]; then
