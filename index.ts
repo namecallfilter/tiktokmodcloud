@@ -52,9 +52,21 @@ const pluginCommand = command({
 	handler: (args) => handleAction(() => getDownloadLinks(DownloadType.Plugin), args),
 });
 
+const testCommand = command({
+	name: "test",
+	description: "Test's both mod and plugin",
+	args: commonFlags,
+	handler: async (args) => {
+		console.log("--- MOD ---");
+		await handleAction(() => getDownloadLinks(DownloadType.Mod), args);
+		console.log("\n--- PLUGIN ---");
+		await handleAction(() => getDownloadLinks(DownloadType.Plugin), args);
+	},
+});
+
 const app = subcommands({
 	name: "tiktokmodcloud",
-	cmds: { mod: modCommand, plugin: pluginCommand },
+	cmds: { mod: modCommand, plugin: pluginCommand, test: testCommand },
 });
 
 run(app, process.argv.slice(2));
