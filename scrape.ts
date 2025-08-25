@@ -4,7 +4,7 @@ dotenv.config({ quiet: true });
 
 const locationRegex = /document\.location\.href\s*=\s*['"](.*?)['"]/;
 const gateRegex = /href='([^']*)'[^>]*?>\s*MIRROR(?:\s+\d+)?\s*<\/a>/;
-const lazyRedirectRegex = /href='([^']*)'[^>]rel='noreferrer'/;
+// const lazyRedirectRegex = /href='([^']*)'[^>]rel='noreferrer'/;
 
 export enum DownloadType {
 	Mod = "tik-tok-mod",
@@ -24,16 +24,18 @@ export async function getDownloadLinks(path: DownloadType) {
 	const gateUrl = gateMatch[1];
 
 	console.log(`Fetching gate page: ${gateUrl}`);
-	const lazyRedirectPageText = await fetch(gateUrl, fetchOptions).then((res) => res.text());
-	const lazyRedirectMatch = lazyRedirectPageText.match(lazyRedirectRegex);
-	if (!lazyRedirectMatch || !lazyRedirectMatch[1]) {
-		throw new Error("Failed to find the lazy redirect URL.");
-	}
-	const lazyRedirectUrl = lazyRedirectMatch[1];
+	// const lazyRedirectPageText = await fetch(gateUrl, fetchOptions).then((res) => res.text());
+	// console.log(lazyRedirectPageText);
+	// const lazyRedirectMatch = lazyRedirectPageText.match(lazyRedirectRegex);
+	// if (!lazyRedirectMatch || !lazyRedirectMatch[1]) {
+	// 	throw new Error("Failed to find the lazy redirect URL.");
+	// }
+	// const lazyRedirectUrl = lazyRedirectMatch[1];
 
-	console.log(`Resolving final mirror URL from: ${lazyRedirectUrl}`);
-	const mirrorResponse = await fetch(lazyRedirectUrl, fetchOptions);
-	const mirrorUrl = mirrorResponse.url;
+	// console.log(`Resolving final mirror URL from: ${lazyRedirectUrl}`);
+	// const mirrorResponse = await fetch(lazyRedirectUrl, fetchOptions);
+	// const mirrorUrl = mirrorResponse.url;
+	const mirrorUrl = await fetch(gateUrl, fetchOptions).then((res) => res.url);
 	console.log(`Mirror URL: ${mirrorUrl}`);
 
 	const modsfirePageText = await fetch(mirrorUrl).then((res) => res.text());
