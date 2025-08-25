@@ -1,6 +1,6 @@
 import { boolean, command, flag, run, subcommands } from "cmd-ts";
 
-import { getModDownload, getPluginDownload } from "./telegram";
+import { DownloadType, getDownloadLinks } from "./scrape";
 import { downloadFile, extractDataInitialPage } from "./utils";
 
 const commonFlags = {
@@ -46,14 +46,14 @@ const modCommand = command({
 	name: "mod",
 	description: "Select the mod",
 	args: commonFlags,
-	handler: (args) => handleAction(getModDownload, args),
+	handler: (args) => handleAction(() => getDownloadLinks(DownloadType.Mod), args),
 });
 
 const pluginCommand = command({
 	name: "plugin",
 	description: "Select the plugin",
 	args: commonFlags,
-	handler: (args) => handleAction(getPluginDownload, args),
+	handler: (args) => handleAction(() => getDownloadLinks(DownloadType.Plugin), args),
 });
 
 const app = subcommands({
@@ -62,13 +62,3 @@ const app = subcommands({
 });
 
 run(app, process.argv.slice(2));
-
-// const client = await createClient();
-
-// const channel = await client.getEntity("TikTokModCloud");
-// const messages = await client.getMessages(channel, {
-// 	filter: new Api.InputMessagesFilterUrl(),
-// 	limit: 10,
-// });
-
-// client.disconnect();

@@ -91,7 +91,6 @@ export async function extractDataInitialPage(url: string) {
 
 	const initialCookies = pageResponse.headers.getSetCookie();
 	const cookieString = initialCookies.map((c) => c.split(";")[0]).join("; ");
-	console.log("Extracted Set-Cookie headers!");
 
 	const pageHtml = await pageResponse.text();
 
