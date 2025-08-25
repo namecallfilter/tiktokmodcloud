@@ -21,12 +21,8 @@ const commonFlags = {
 };
 
 async function handleAction(getDownloadDetails: () => Promise<string[]>, args: { check: boolean; download: boolean }) {
-	if (!args.check && !args.download) {
-		console.error("Error: Please specify an action: --check (-c) or --download (-d).");
-		return;
-	}
-	if (args.check && args.download) {
-		console.error("Error: --check and --download cannot be used together.");
+	if (args.check === args.download) {
+		console.error("Error: Please specify exactly one action: --check (-c) or --download (-d).");
 		return;
 	}
 
