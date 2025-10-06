@@ -36,7 +36,7 @@ jobs:
       - name: Get Latest Version from Source
         id: get_version
         run: |
-          VERSION=$(npx tsx index.ts ${{ matrix.type }} -c)
+          VERSION=$(npx tsx index.ts ${{ matrix.type }} -c | tail -n 1)
 
           if [ -z "${VERSION}" ]; then
             echo "Failed to retrieve version. The script returned an empty string."
