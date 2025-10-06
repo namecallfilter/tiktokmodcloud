@@ -67,6 +67,7 @@ export async function downloadFile(
 			process.stdout.write(`\rFile downloaded successfully: ${filePath}\n`);
 			resolve(filePath);
 		});
+
 		fileStream.on("error", (error) => {
 			console.error(`\nError downloading file: ${error.message}`);
 			reject(error);
@@ -84,6 +85,7 @@ function formatCookieHeader(setCookieHeader: string): string {
 
 export async function extractDataInitialPage(url: string) {
 	console.log(`Fetching initial page data from: ${url}`);
+
 	const pageResponse = await fetch(url);
 	if (!pageResponse.ok) {
 		throw new Error(`Failed to fetch page: ${pageResponse.status} ${pageResponse.statusText}`);
@@ -108,10 +110,12 @@ export async function extractDataInitialPage(url: string) {
 			foundFileId: !!fileId,
 			foundSitekey: !!sitekey,
 		});
+
 		throw new Error("Failed to extract required CSRF token, File ID, or Sitekey from the page.");
 	}
 
 	console.log(`Successfully extracted Site key: ${sitekey}, CSRF token: ${csrfToken}, and File ID: ${fileId}`);
+
 	return { cookieString, csrfToken, fileId, sitekey };
 }
 
@@ -129,6 +133,7 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 			},
 			body: JSON.stringify({ clientKey: capsolverKey }),
 		});
+
 		const balanceData = await balanceResponse.json();
 		if (balanceData.errorId) {
 			console.error(`Failed to get balance: ${balanceData.errorDescription}`);
@@ -137,6 +142,7 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 		}
 
 		console.log("Creating Turnstile CAPTCHA task with Capsolver...");
+
 		const createTaskPayload = {
 			clientKey: capsolverKey,
 			task: {
@@ -185,6 +191,7 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 			if (getResultData.status === "ready") {
 				const durationInSeconds = (Date.now() - startTime) / 1000;
 				console.log(`Successfully obtained CAPTCHA solution token in ${durationInSeconds.toFixed(2)} seconds.`);
+
 				return getResultData.solution.token;
 			}
 
@@ -194,6 +201,7 @@ async function solveTurnstile(sitekey: string, pageUrl: string): Promise<string>
 		}
 	} catch (error) {
 		console.error("An error occurred during the CAPTCHA solving process:", error);
+
 		throw error;
 	}
 }
@@ -203,6 +211,7 @@ export async function getVerificationCookie(pageUrl: string): Promise<string> {
 	const captchaToken = await solveTurnstile(sitekey, pageUrl);
 
 	console.log("Verifying captcha solution with the website...");
+
 	const verifyResponse = await fetch("https://modsfire.com/verify-cf-captcha", {
 		method: "POST",
 		headers: {
@@ -227,7 +236,9 @@ export async function getVerificationCookie(pageUrl: string): Promise<string> {
 		if (!finalCookie) {
 			throw new Error("Verification was successful, but no 'Set-Cookie' header was returned.");
 		}
+
 		console.log("Successfully obtained verification cookie!");
+
 		return formatCookieHeader(finalCookie);
 	} else {
 		throw new Error(`Website rejected the verification: ${JSON.stringify(responseData)}`);
