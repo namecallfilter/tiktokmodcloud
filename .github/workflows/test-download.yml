@@ -1,45 +1,45 @@
 name: Test Download Both Mod & Plugin
 
 on:
-    schedule:
-        - cron: "0 0 * * *"
-    workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    test-download-both:
-        runs-on: ubuntu-latest
+  test-download-both:
+    runs-on: ubuntu-latest
 
-        env:
-            CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
-            APP_ID: ${{ secrets.APP_ID }}
-            API_HASH: ${{ secrets.API_HASH }}
-            SESSION: ${{ secrets.SESSION }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
+      APP_ID: ${{ secrets.APP_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      SESSION: ${{ secrets.SESSION }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Install dependencies
-              run: |
-                  npm install
-                  npm install -g tsx
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install -g tsx
 
-            - name: Test download both
-              run: |
-                  tsx index.ts test -d
+      - name: Test download both
+        run: |
+          tsx index.ts test -d
 
-                  MOD_FILE_PATH=$(find ./apks -name "*_universal.apk" | head -n 1)
-                  if [ -z "${MOD_FILE_PATH}" ]; then
-                    echo "No MOD APK file found."
-                    exit 1
-                  fi
+          MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
+          if [ -z "${MOD_FILE_PATH}" ]; then
+            echo "No MOD APK file found."
+            exit 1
+          fi
 
-                  PLUGIN_FILE_PATH=$(find ./apks -name "*_plugin.apk" | head -n 1)
-                  if [ -z "${PLUGIN_FILE_PATH}" ]; then
-                    echo "No Plugin APK file found."
-                    exit 1
-                  fi
+          PLUGIN_FILE_PATH=$(find ./apks -name "*_plugin*.apk" | head -n 1)
+          if [ -z "${PLUGIN_FILE_PATH}" ]; then
+            echo "No Plugin APK file found."
+            exit 1
+          fi

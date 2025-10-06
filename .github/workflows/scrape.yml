@@ -1,83 +1,84 @@
 name: Download and Release TikTok Mod & Plugin
 
 on:
-    schedule:
-        - cron: "*/15 * * * *"
-    workflow_dispatch:
+  schedule:
+    - cron: "0 */1 * * *"
+  workflow_dispatch:
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    download-and-release:
-        runs-on: ubuntu-latest
+  download-and-release:
+    runs-on: ubuntu-latest
 
-        strategy:
-            matrix:
-                type: [mod, plugin]
+    strategy:
+      matrix:
+        type: [mod, plugin]
+      fail-fast: false
 
-        env:
-            CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
-            APP_ID: ${{ secrets.APP_ID }}
-            API_HASH: ${{ secrets.API_HASH }}
-            SESSION: ${{ secrets.SESSION }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
+      APP_ID: ${{ secrets.APP_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      SESSION: ${{ secrets.SESSION }}
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Install dependencies
-              run: |
-                  npm install
-                  npm install -g tsx
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install -g tsx
 
-            - name: Get Latest Version from Source
-              id: get_version
-              run: |
-                  VERSION=$(tsx index.ts ${{ matrix.type }} -c | tail -n 1)
-                  if [ -z "${VERSION}" ]; then
-                    echo "Failed to retrieve version."
-                    exit 1
-                  fi
+      - name: Get Latest Version from Source
+        id: get_version
+        run: |
+          VERSION=$(npx tsx index.ts ${{ matrix.type }} -c)
 
-                  echo "Discovered version: ${VERSION}"
-                  echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          if [ -z "${VERSION}" ]; then
+            echo "Failed to retrieve version. The script returned an empty string."
+            exit 1
+          fi
 
-            - name: Check if Release Already Exists
-              id: check_release
-              if: steps.get_version.outputs.VERSION
-              run: |
-                  TAG_NAME="v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}"
-                  echo "Checking for existing release with tag: ${TAG_NAME}"
+          echo "Discovered version: ${VERSION}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
 
-                  if git ls-remote --tags origin | grep -q "refs/tags/${TAG_NAME}"; then
-                    echo "Release for ${TAG_NAME} already exists. Halting execution."
-                    echo "continue=false" >> $GITHUB_OUTPUT
-                  else
-                    echo "No existing release found. Proceeding to download."
-                    echo "continue=true" >> $GITHUB_OUTPUT
-                  fi
+      - name: Check if Release Already Exists
+        id: check_release
+        run: |
+          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}"
+          echo "Checking for existing release with tag: ${TAG_NAME}"
 
-            - name: Download Artifact
-              id: download_artifact
-              if: steps.check_release.outputs.continue == 'true'
-              run: |
-                  tsx index.ts ${{ matrix.type }} -d
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Release for ${TAG_NAME} already exists. Halting execution for this job."
+            echo "continue=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No existing release found. Proceeding to download."
+            echo "continue=true" >> "$GITHUB_OUTPUT"
+          fi
 
-                  FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
-                  if [ -z "${FILE_PATH}" ]; then
-                    echo "No APK file found."
-                    exit 1
-                  fi
+      - name: Download Artifact
+        id: download_artifact
+        if: steps.check_release.outputs.continue == 'true'
+        run: |
+          FILE_PATH=$(npx tsx index.ts ${{ matrix.type }} -d)
 
-                  echo "FILE_PATH=${FILE_PATH}" >> $GITHUB_OUTPUT
+          if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
+            echo "Script did not return a valid file path or the file does not exist."
+            exit 1
+          fi
 
-            - name: Create Release
-              if: steps.download_artifact.outputs.FILE_PATH
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}
-                  name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_version.outputs.VERSION }}
-                  files: ${{ steps.download_artifact.outputs.FILE_PATH }}
-                  body: "Automated release for ${{ matrix.type }} version ${{ steps.get_version.outputs.VERSION }}."
+          echo "Artifact downloaded to: ${FILE_PATH}"
+          echo "FILE_PATH=${FILE_PATH}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        if: steps.download_artifact.outputs.FILE_PATH
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}
+          name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_version.outputs.VERSION }}
+          files: ${{ steps.download_artifact.outputs.FILE_PATH }}
+          body: Automated release for ${{ matrix.type }} version ${{ steps.get_version.outputs.VERSION }}.
