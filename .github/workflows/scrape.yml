@@ -64,7 +64,9 @@ jobs:
         id: download_artifact
         if: steps.check_release.outputs.continue == 'true'
         run: |
-          FILE_PATH=$(npx tsx index.ts ${{ matrix.type }} -d)
+          npx tsx index.ts ${{ matrix.type }} -d
+
+          FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
 
           if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
             echo "Script did not return a valid file path or the file does not exist."
