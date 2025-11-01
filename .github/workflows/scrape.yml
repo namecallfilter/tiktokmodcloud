@@ -69,7 +69,7 @@ jobs:
           FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
 
           if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
-            echo "Script did not return a valid file path or the file does not exist."
+            echo "Script did not download the artifact."
             exit 1
           fi
 
