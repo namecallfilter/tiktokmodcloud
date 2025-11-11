@@ -23,14 +23,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          npm install
-          npm install -g tsx
+      - name: Download Rust binary
+        uses: dawidd6/action-download-artifact@v4
+        with:
+          workflow: build-binary.yml
+          name: tiktokmodcloud-binary
+          path: ./bin
+
+      - name: Make binary executable
+        run: chmod +x ./bin/tiktokmodcloud
 
       - name: Test download both
         run: |
-          tsx index.ts test -d
+          ./bin/tiktokmodcloud test -d
 
           MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
           if [ -z "${MOD_FILE_PATH}" ]; then

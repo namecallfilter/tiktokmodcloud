@@ -1,0 +1,34 @@
+name: Build and Cache Rust Binary
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktokmodcloud-binary
+          path: target/release/tiktokmodcloud
+          retention-days: 90

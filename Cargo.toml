@@ -1,0 +1,19 @@
+[package]
+name = "tiktokmodcloud"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "fs"] }
+futures-util = "0.3"
+
+wreq = { version = "6.0.0-rc.21", features = ["cookies", "json", "stream"] }
+wreq-util = "3.0.0-rc.7"
+
+serde = { version = "1.0.228", features = ["derive"] }
+regex = "1.12.2"
+
+clap = { version = "4.5.51", features = ["derive"] }
+dotenvy = "0.15.7"

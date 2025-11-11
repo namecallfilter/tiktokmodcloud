@@ -28,15 +28,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          npm install
-          npm install -g tsx
+      - name: Download Rust binary
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build-binary.yml
+          name: tiktokmodcloud-binary
+          path: ./bin
+
+      - name: Make binary executable
+        run: chmod +x ./bin/tiktokmodcloud
 
       - name: Get Latest Version from Source
         id: get_version
         run: |
-          VERSION=$(npx tsx index.ts ${{ matrix.type }} -c | tail -n 1)
+          VERSION=$(./bin/tiktokmodcloud ${{ matrix.type }} -c | tail -n 1)
 
           if [ -z "${VERSION}" ]; then
             echo "Failed to retrieve version. The script returned an empty string."
@@ -64,7 +69,7 @@ jobs:
         id: download_artifact
         if: steps.check_release.outputs.continue == 'true'
         run: |
-          npx tsx index.ts ${{ matrix.type }} -d
+          ./bin/tiktokmodcloud ${{ matrix.type }} -d
 
           FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
 
