@@ -19,9 +19,10 @@ impl DownloadType {
 }
 
 async fn fetch_with_retry(
-	client: &Client, url: &str, referrer: &str, retries: u32, delay_ms: u64,
+	client: &Client, url: &str, referrer: &str, retries: u32,
 ) -> Result<wreq::Response> {
 	let mut last_error = None;
+	let mut delay_ms = 5000;
 
 	for i in 0..retries {
 		match client.get(url).header("Referer", referrer).send().await {
@@ -51,8 +52,12 @@ async fn fetch_with_retry(
 			}
 		}
 
-		if i < retries - 1 {
+		if i < retries {
 			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+
+			let multiplier = (4_u64.saturating_sub(i as u64)).max(1);
+
+			delay_ms = delay_ms.saturating_mul(multiplier);
 		}
 	}
 
@@ -69,7 +74,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	println!("Fetching initial page: {}", start_url);
 
-	let gate_page_text = fetch_with_retry(&client, &start_url, &start_url, 3, 2000)
+	let gate_page_text = fetch_with_retry(&client, &start_url, &start_url, 3)
 		.await?
 		.text()
 		.await?;
@@ -86,7 +91,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	println!("Fetching gate page: {}", gate_url);
 
-	let gate_response = fetch_with_retry(&client, gate_url, &start_url, 3, 2000).await?;
+	let gate_response = fetch_with_retry(&client, gate_url, &start_url, 3).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
 
 	let mirror_url = if gate_url_after_redirect.contains("file-download") {
@@ -103,8 +108,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 		println!("Resolving final mirror URL from: {}", lazy_redirect_url);
 
-		let mirror_response =
-			fetch_with_retry(&client, lazy_redirect_url, &start_url, 3, 2000).await?;
+		let mirror_response = fetch_with_retry(&client, lazy_redirect_url, &start_url, 3).await?;
 		mirror_response.uri().to_string()
 	} else {
 		gate_url_after_redirect
@@ -112,7 +116,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	println!("Mirror URL: {}", mirror_url);
 
-	let modsfire_page_text = fetch_with_retry(&client, &mirror_url, &start_url, 3, 2000)
+	let modsfire_page_text = fetch_with_retry(&client, &mirror_url, &start_url, 3)
 		.await?
 		.text()
 		.await?;
