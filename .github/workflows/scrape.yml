@@ -41,24 +41,18 @@ jobs:
       - name: Get Latest Info from Source
         id: get_version
         run: |
-          INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c | tail -n 1)
+          JSON_INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c --json)
 
-          if [ -z "${INFO}" ]; then
-            echo "Failed to retrieve version. The script returned an empty string."
+          if [ -z "${JSON_INFO=}" ]; then
+            echo "Failed to retrieve json info."
             exit 1
           fi
 
-          VERSION=$(echo "${INFO}" | cut -d'|' -f1 | xargs)
-          DATE=$(echo "${INFO}" | cut -d'|' -f2 | xargs)
+          echo "Discovered info: ${JSON_INFO}"
 
-          DATE_TAG=$(echo "${DATE}" | sed 's/[: -]//g' | sed 's/\([0-9]\{8\}\)\([0-9]\{4\}\)/\1-\2/')
-
-          echo "Discovered version: ${VERSION}"
-          echo "Upload date: ${DATE}"
-
-          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "DATE=${DATE}" >> "$GITHUB_OUTPUT"
-          echo "DATE_TAG=${DATE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$(echo '${JSON_INFO}' | jq -r .version)" >> "$GITHUB_OUTPUT"
+          echo "DATE=$(echo '${JSON_INFO}' | jq -r .uploadDate)" >> "$GITHUB_OUTPUT"
+          echo "DATE_TAG=$(echo '${JSON_INFO}' | jq -r .dateTag)" >> "$GITHUB_OUTPUT"
 
       - name: Check if Release Already Exists
         id: check_release
