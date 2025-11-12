@@ -39,7 +39,7 @@ jobs:
         run: chmod +x ./bin/tiktokmodcloud
 
       - name: Get Latest Info from Source
-        id: get_version
+        id: get_info
         run: |
           set -e
 
@@ -59,7 +59,7 @@ jobs:
       - name: Check if Release Already Exists
         id: check_release
         run: |
-          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_version.outputs.DATE_TAG }}"
+          TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_info.outputs.DATE_TAG }}"
           echo "Checking for existing release with tag: ${TAG_NAME}"
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
@@ -90,7 +90,7 @@ jobs:
         if: steps.download_artifact.outputs.FILE_PATH
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get_version.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_version.outputs.DATE_TAG }}
-          name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_version.outputs.VERSION }}
+          tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_info.outputs.DATE_TAG }}
+          name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
           files: ${{ steps.download_artifact.outputs.FILE_PATH }}
-          body: Automated release for ${{ matrix.type }} version ${{ steps.get_version.outputs.VERSION }} uploaded on ${{ steps.get_version.outputs.DATE }}
+          body: Automated release for ${{ matrix.type }} version ${{ steps.get_info.outputs.VERSION }} uploaded on ${{ steps.get_info.outputs.DATE }}
