@@ -106,14 +106,6 @@ pub async fn download_file(
 	Ok(file_path)
 }
 
-fn format_cookie_header(set_cookie_headers: &[String]) -> String {
-	set_cookie_headers
-		.iter()
-		.map(|cookie| cookie.split(';').next().unwrap_or(""))
-		.collect::<Vec<_>>()
-		.join("; ")
-}
-
 pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
 	println!("Fetching initial page data from: {}", url);
 
@@ -180,8 +172,8 @@ pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
 		.to_string();
 
 	println!(
-		"Successfully extracted Site key: {}, CSRF token: {}, and File ID: {}",
-		sitekey, csrf_token, file_id
+		"Successfully extracted Site key: {}, CSRF token: {}, File ID: {}, and File Upload Date: {}",
+		sitekey, csrf_token, file_id, file_upload_date
 	);
 
 	let initial_page = InitialPage {
@@ -239,7 +231,11 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 		.headers()
 		.get_all("set-cookie")
 		.iter()
-		.filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
+		.filter_map(|v| {
+			v.to_str()
+				.ok()
+				.map(|s| s.split(';').next().unwrap_or("").to_string())
+		})
 		.collect();
 
 	let response_data: VerifyResponse = verify_response.json().await?;
@@ -251,7 +247,7 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 
 		println!("Successfully obtained verification cookie!");
 
-		Ok(format_cookie_header(&final_cookies))
+		Ok(final_cookies.join("; "))
 	} else {
 		bail!("Website rejected the verification");
 	}
