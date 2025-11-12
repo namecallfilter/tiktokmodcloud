@@ -41,6 +41,8 @@ jobs:
       - name: Get Latest Info from Source
         id: get_version
         run: |
+          set -e
+
           JSON_INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c --json)
 
           if [ -z "${JSON_INFO}" ]; then
