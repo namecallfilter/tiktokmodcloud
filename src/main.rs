@@ -118,6 +118,7 @@ async fn main() -> Result<()> {
 				.with_thread_ids(false)
 				.with_file(true)
 				.with_line_number(true)
+				.with_writer(std::io::stderr)
 				.without_time(),
 		)
 		.init();
