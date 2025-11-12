@@ -38,10 +38,11 @@ async fn get_with_retry(
 					let reason = status.canonical_reason().unwrap_or("Unknown Status");
 
 					warn!(
-						"Attempt {} failed with status {}: {}. Retrying...",
+						"Attempt {} failed with status {}: {}. Retrying in {}ms...",
 						i + 1,
 						status.as_u16(),
-						reason
+						reason,
+						delay_ms
 					);
 
 					last_error = Some(
@@ -57,9 +58,10 @@ async fn get_with_retry(
 			}
 			Err(e) => {
 				warn!(
-					"Attempt {} failed with request error: {}. Retrying...",
+					"Attempt {} failed with request error: {}. Retrying in {}ms...",
 					i + 1,
-					e
+					e,
+					delay_ms
 				);
 
 				last_error = Some(ScrapeError::GetWithRetry(url.to_string(), e.to_string()).into());
