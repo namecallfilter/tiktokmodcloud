@@ -1,19 +1,22 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
+use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::{
 	fs::File,
 	io::{AsyncWriteExt, BufWriter},
 };
+use tracing::{debug, info};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
 
-use crate::capsolver::solve_turnstile;
+use crate::{capsolver::solve_turnstile, error::UtilsError};
 
 #[derive(Debug, Clone)]
-pub struct InitialPage {
+pub struct InitialPageData {
 	pub cookie: String,
 	pub csrf_token: String,
 	pub file_id: String,
@@ -38,7 +41,7 @@ pub async fn download_file(
 	let output_dir = output_dir.unwrap_or("./apks");
 	let cookie = get_verification_cookie(referer).await?;
 
-	println!("Starting download from {}", download_url);
+	info!("Starting download from {}", download_url);
 
 	let client = Client::builder()
 		.emulation(Emulation::Chrome142)
@@ -53,12 +56,18 @@ pub async fn download_file(
 		.await?;
 
 	if !response.status().is_success() {
-		bail!("Failed to download file: {}", response.status());
+		bail!(UtilsError::DownloadFile(response.status()));
 	}
 
 	let total_size = response
 		.content_length()
 		.context("Content-Length header not found, might not be apk download")?;
+
+	let pb = ProgressBar::new(total_size);
+	pb.set_style(ProgressStyle::default_bar()
+			.template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
+			.progress_chars("#>-"));
+	pb.set_message("Downloading...");
 
 	let final_url = response.uri().to_string();
 	let filename = final_url
@@ -78,10 +87,8 @@ pub async fn download_file(
 	let mut writer = BufWriter::new(file);
 
 	let mut downloaded_size = 0u64;
-	let mut last_logged_percentage = -1i32;
 
 	let mut stream = response.bytes_stream();
-	use futures_util::StreamExt;
 
 	while let Some(chunk) = stream.next().await {
 		let chunk = chunk?;
@@ -89,39 +96,28 @@ pub async fn download_file(
 
 		downloaded_size += chunk.len() as u64;
 
-		if total_size > 0 {
-			let percentage = ((downloaded_size as f64 / total_size as f64) * 100.0).floor() as i32;
-			if percentage != last_logged_percentage {
-				print!("\rDownloading... {}%", percentage);
-				use std::io::Write;
-				std::io::stdout().flush()?;
-				last_logged_percentage = percentage;
-			}
-		}
+		pb.set_position(downloaded_size);
 	}
 
 	writer.flush().await?;
-	println!("\rFile downloaded successfully: {}", file_path.display());
+
+	pb.finish_with_message(format!(
+		"File downloaded successfully: {}",
+		file_path.display()
+	));
 
 	Ok(file_path)
 }
 
-pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
-	println!("Fetching initial page data from: {}", url);
+pub async fn extract_data_initial_page(url: &str) -> Result<InitialPageData> {
+	info!("Fetching initial page data from: {}", url);
 
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 
 	let page_response = client.get(url).send().await?;
 
 	if !page_response.status().is_success() {
-		bail!(
-			"Failed to fetch page: {} {}",
-			page_response.status().as_u16(),
-			page_response
-				.status()
-				.canonical_reason()
-				.unwrap_or("Unknown")
-		);
+		bail!(UtilsError::FetchPage(page_response.status()));
 	}
 
 	let initial_cookies: Vec<String> = page_response
@@ -171,12 +167,7 @@ pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
 		.as_str()
 		.to_string();
 
-	println!(
-		"Successfully extracted Site key: {}, CSRF token: {}, File ID: {}, and File Upload Date: {}",
-		sitekey, csrf_token, file_id, file_upload_date
-	);
-
-	let initial_page = InitialPage {
+	let initial_page_data = InitialPageData {
 		cookie,
 		csrf_token,
 		file_id,
@@ -184,11 +175,16 @@ pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
 		sitekey,
 	};
 
-	Ok(initial_page)
+	debug!(
+		"Successfully fetched initial page data: {:#?}",
+		initial_page_data
+	);
+
+	Ok(initial_page_data)
 }
 
 pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
-	let InitialPage {
+	let InitialPageData {
 		cookie,
 		csrf_token,
 		file_id,
@@ -198,7 +194,7 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 
 	let captcha_token = solve_turnstile(sitekey, page_url.to_string()).await?;
 
-	println!("Verifying captcha solution with the website...");
+	info!("Verifying captcha solution with the website...");
 
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 
@@ -242,13 +238,13 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 
 	if response_data.success {
 		if final_cookies.is_empty() {
-			bail!("Verification was successful, but no 'Set-Cookie' header was returned.");
+			bail!(UtilsError::VerificationNoSetCookie);
 		}
 
-		println!("Successfully obtained verification cookie!");
+		info!("Successfully obtained verification cookie!");
 
 		Ok(final_cookies.join("; "))
 	} else {
-		bail!("Website rejected the verification");
+		bail!(UtilsError::VerificationRejection);
 	}
 }

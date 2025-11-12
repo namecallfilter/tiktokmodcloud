@@ -1,7 +1,13 @@
 use anyhow::{Context as _, Result};
+use rand::Rng;
 use regex::Regex;
+use tracing::{info, warn};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
+
+use crate::error::ScrapeError;
+
+const MAX_DELAY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DownloadType {
@@ -18,7 +24,7 @@ impl DownloadType {
 	}
 }
 
-async fn fetch_with_retry(
+async fn get_with_retry(
 	client: &Client, url: &str, referrer: &str, retries: u32,
 ) -> Result<wreq::Response> {
 	let mut last_error = None;
@@ -27,41 +33,48 @@ async fn fetch_with_retry(
 	for i in 0..retries {
 		match client.get(url).header("Referer", referrer).send().await {
 			Ok(response) => {
-				if response.status().is_success() {
-					return Ok(response);
-				} else {
+				if !response.status().is_success() {
 					let status = response.status();
-					let error_msg = format!("HTTP error! status: {}", status);
-					eprintln!(
-						"Attempt {} failed: {}. Retrying in {}s...",
+					let reason = status.canonical_reason().unwrap_or("Unknown Status");
+
+					warn!(
+						"Attempt {} failed with status {}: {}. Retrying...",
 						i + 1,
-						error_msg,
-						delay_ms / 1000
+						status.as_u16(),
+						reason
 					);
-					last_error = Some(anyhow::anyhow!(error_msg));
+
+					last_error = Some(
+						ScrapeError::GetWithRetry(
+							url.to_string(),
+							format!("Server responded with {}: {}", status.as_u16(), reason),
+						)
+						.into(),
+					);
+				} else {
+					return Ok(response);
 				}
 			}
 			Err(e) => {
-				eprintln!(
-					"Attempt {} failed: {}. Retrying in {}s...",
+				warn!(
+					"Attempt {} failed with request error: {}. Retrying...",
 					i + 1,
-					e,
-					delay_ms / 1000
+					e
 				);
-				last_error = Some(anyhow::anyhow!(e));
+
+				last_error = Some(ScrapeError::GetWithRetry(url.to_string(), e.to_string()).into());
 			}
 		}
 
 		if i < retries {
-			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+			let jitter_ms = rand::rng().random_range(0..=1000);
+			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms + jitter_ms)).await;
 
-			let multiplier = (4_u64.saturating_sub(i as u64)).max(1);
-
-			delay_ms = delay_ms.saturating_mul(multiplier);
+			delay_ms = (delay_ms.saturating_mul(2)).min(MAX_DELAY_MS);
 		}
 	}
 
-	Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Fetch failed after all retries.")))
+	Err(last_error.unwrap())
 }
 
 pub async fn get_download_links(download_type: DownloadType) -> Result<(String, String)> {
@@ -72,9 +85,9 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
 
-	println!("Fetching initial page: {}", start_url);
+	info!("Fetching initial page: {}", start_url);
 
-	let gate_page_text = fetch_with_retry(&client, &start_url, &start_url, 3)
+	let gate_page_text = get_with_retry(&client, &start_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
@@ -89,9 +102,9 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 		.context("Failed to extract gate URL from match")?
 		.as_str();
 
-	println!("Fetching gate page: {}", gate_url);
+	info!("Fetching gate page: {}", gate_url);
 
-	let gate_response = fetch_with_retry(&client, gate_url, &start_url, 3).await?;
+	let gate_response = get_with_retry(&client, gate_url, &start_url, 5).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
 
 	let mirror_url = if gate_url_after_redirect.contains("file-download") {
@@ -106,17 +119,17 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 			.context("Failed to extract lazy redirect URL")?
 			.as_str();
 
-		println!("Resolving final mirror URL from: {}", lazy_redirect_url);
+		info!("Resolving final mirror URL from: {}", lazy_redirect_url);
 
-		let mirror_response = fetch_with_retry(&client, lazy_redirect_url, &start_url, 3).await?;
+		let mirror_response = get_with_retry(&client, lazy_redirect_url, &start_url, 5).await?;
 		mirror_response.uri().to_string()
 	} else {
 		gate_url_after_redirect
 	};
 
-	println!("Mirror URL: {}", mirror_url);
+	info!("Mirror URL: {}", mirror_url);
 
-	let modsfire_page_text = fetch_with_retry(&client, &mirror_url, &start_url, 3)
+	let modsfire_page_text = get_with_retry(&client, &mirror_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
@@ -132,7 +145,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 		.as_str()
 		.to_string();
 
-	println!("Modsfire URL: {}", modsfire_url);
+	info!("Modsfire URL: {}", modsfire_url);
 
 	let direct_download_link = {
 		let re = Regex::new(r"/([^/]*)$")?;
