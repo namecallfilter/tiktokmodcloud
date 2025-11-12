@@ -2,7 +2,6 @@ use std::{env, time::Instant};
 
 use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
-use tokio::time::{Duration, sleep};
 use tracing::{debug, info};
 use wreq::Client;
 use wreq_util::Emulation;
