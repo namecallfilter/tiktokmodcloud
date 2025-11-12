@@ -50,9 +50,9 @@ jobs:
 
           echo "Discovered info: ${JSON_INFO}"
 
-          echo "VERSION=$(echo '${JSON_INFO}' | jq -r .version)" >> "$GITHUB_OUTPUT"
-          echo "DATE=$(echo '${JSON_INFO}' | jq -r .uploadDate)" >> "$GITHUB_OUTPUT"
-          echo "DATE_TAG=$(echo '${JSON_INFO}' | jq -r .dateTag)" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$(jq -r .version <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+          echo "DATE=$(jq -r .uploadDate <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+          echo "DATE_TAG=$(jq -r .dateTag <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
 
       - name: Check if Release Already Exists
         id: check_release
