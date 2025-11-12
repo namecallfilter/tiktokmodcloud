@@ -87,23 +87,8 @@ struct BalanceResponse {
 
 // TODO: When I get a timeout or a failed task then retry the task
 
-pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
+async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution> {
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
-	let capsolver_key =
-		env::var("CAPSOLVER_KEY").context("CAPSOLVER_KEY environment variable not set")?;
-
-	get_capsolver_balance(&capsolver_key).await?;
-
-	println!("Creating Capsolver task...");
-
-	let task_payload = CreateTaskPayload {
-		client_key: capsolver_key.clone(),
-		task: Task {
-			r#type: TaskType::Turnstile,
-			website_key: site_key,
-			website_url: url,
-		},
-	};
 
 	let create_task_resp = client
 		.post(CREATE_TASK)
@@ -130,7 +115,7 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 	println!("Task {} created. Polling for solution...", task_id);
 
 	let get_result_payload = GetResultPayload {
-		client_key: capsolver_key,
+		client_key: task_payload.client_key,
 		task_id: task_id.clone(),
 	};
 
@@ -166,7 +151,7 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 				let solution = get_result_data
 					.solution
 					.context("No solution in ready response")?;
-				return Ok(solution.token);
+				return Ok(solution);
 			}
 			Some(TaskStatus::Failed) => {
 				bail!("Captcha solve failed");
@@ -179,6 +164,28 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 			}
 		}
 	}
+}
+
+pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
+	let capsolver_key =
+		env::var("CAPSOLVER_KEY").context("CAPSOLVER_KEY environment variable not set")?;
+
+	get_capsolver_balance(&capsolver_key).await?;
+
+	println!("Creating Capsolver task...");
+
+	let task_payload = CreateTaskPayload {
+		client_key: capsolver_key.clone(),
+		task: Task {
+			r#type: TaskType::Turnstile,
+			website_key: site_key,
+			website_url: url,
+		},
+	};
+
+	let Solution { token } = create_and_polltask(task_payload).await?;
+
+	Ok(token)
 }
 
 pub async fn get_capsolver_balance(capsolver_key: &str) -> Result<()> {
