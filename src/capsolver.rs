@@ -85,6 +85,8 @@ struct BalanceResponse {
 	balance: Option<f64>,
 }
 
+// TODO: When I get a timeout or a failed task then retry the task
+
 pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 	let capsolver_key =
