@@ -2,6 +2,7 @@ use std::{env, time::Instant};
 
 use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
+use tokio::time::{Duration, sleep};
 use tracing::{debug, info};
 use wreq::Client;
 use wreq_util::Emulation;
@@ -178,6 +179,7 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 		},
 	};
 
+	// TODO: Potentially add a retry mechanism
 	let Solution { token } = create_and_polltask(task_payload).await?;
 
 	Ok(token)
