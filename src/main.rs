@@ -94,7 +94,6 @@ async fn handle_action(
 			println!("{}", serde_json::to_string(&output)?);
 		} else {
 			println!("Version: {}", version);
-
 			println!("Upload Date: {}", file_upload_date)
 		}
 	}
