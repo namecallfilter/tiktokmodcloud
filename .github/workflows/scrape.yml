@@ -41,7 +41,7 @@ jobs:
       - name: Get Latest Info from Source
         id: get_version
         run: |
-          JSON_INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c --json | tail -n 1)
+          JSON_INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c --json)
 
           if [ -z "${JSON_INFO}" ]; then
             echo "Failed to retrieve json info."
