@@ -12,6 +12,15 @@ use wreq_util::Emulation;
 
 use crate::capsolver::solve_turnstile;
 
+#[derive(Debug, Clone)]
+pub struct InitialPage {
+	pub cookie: String,
+	pub csrf_token: String,
+	pub file_id: String,
+	pub file_upload_date: String,
+	pub sitekey: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct VerifyResponse {
 	success: bool,
@@ -105,7 +114,7 @@ fn format_cookie_header(set_cookie_headers: &[String]) -> String {
 		.join("; ")
 }
 
-pub async fn extract_data_initial_page(url: &str) -> Result<(String, String, String, String)> {
+pub async fn extract_data_initial_page(url: &str) -> Result<InitialPage> {
 	println!("Fetching initial page data from: {}", url);
 
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
@@ -130,7 +139,7 @@ pub async fn extract_data_initial_page(url: &str) -> Result<(String, String, Str
 		.filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
 		.collect();
 
-	let cookie_string = initial_cookies
+	let cookie = initial_cookies
 		.iter()
 		.map(|c| c.split(';').next().unwrap_or(""))
 		.collect::<Vec<_>>()
@@ -154,6 +163,14 @@ pub async fn extract_data_initial_page(url: &str) -> Result<(String, String, Str
 		.as_str()
 		.to_string();
 
+	let file_upload_date_regex = Regex::new(r#"(?:^|\D)(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:$|\D)"#)?;
+	let file_upload_date = file_upload_date_regex
+		.captures(&page_html)
+		.and_then(|cap| cap.get(1))
+		.context("Failed to extract File ID")?
+		.as_str()
+		.to_string();
+
 	let sitekey_regex = Regex::new(r#"class="cf-turnstile"[^>]+data-sitekey="([^"]+)""#)?;
 	let sitekey = sitekey_regex
 		.captures(&page_html)
@@ -167,11 +184,26 @@ pub async fn extract_data_initial_page(url: &str) -> Result<(String, String, Str
 		sitekey, csrf_token, file_id
 	);
 
-	Ok((cookie_string, csrf_token, file_id, sitekey))
+	let initial_page = InitialPage {
+		cookie,
+		csrf_token,
+		file_id,
+		file_upload_date,
+		sitekey,
+	};
+
+	Ok(initial_page)
 }
 
 pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
-	let (cookie_string, csrf_token, file_id, sitekey) = extract_data_initial_page(page_url).await?;
+	let InitialPage {
+		cookie,
+		csrf_token,
+		file_id,
+		sitekey,
+		..
+	} = extract_data_initial_page(page_url).await?;
+
 	let captcha_token = solve_turnstile(sitekey, page_url.to_string()).await?;
 
 	println!("Verifying captcha solution with the website...");
@@ -187,7 +219,7 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 		.post("https://modsfire.com/verify-cf-captcha")
 		.header("Content-Type", "application/json")
 		.header("X-CSRF-TOKEN", &csrf_token)
-		.header("Cookie", &cookie_string)
+		.header("Cookie", &cookie)
 		.json(&verify_payload)
 		.send()
 		.await?;

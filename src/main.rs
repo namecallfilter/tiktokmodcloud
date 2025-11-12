@@ -9,6 +9,8 @@ mod utils;
 use scrape::{DownloadType, get_download_links};
 use utils::{download_file, extract_data_initial_page};
 
+use crate::utils::InitialPage;
+
 #[derive(Parser)]
 #[command(name = "tiktokmodcloud")]
 #[command(about = "TikTok Mod Cloud CLI", long_about = None)]
@@ -53,9 +55,15 @@ async fn handle_action(download_type: DownloadType, check: bool, download: bool)
 	let (download_link, referer) = get_download_links(download_type).await?;
 
 	if check {
-		let (_, _, file_id, _) = extract_data_initial_page(&referer).await?;
+		let InitialPage {
+			file_id,
+			file_upload_date,
+			..
+		} = extract_data_initial_page(&referer).await?;
+
 		let version = file_id.split('_').next().unwrap_or(&file_id);
-		println!("{}", version);
+
+		println!("{} | {}", version, file_upload_date);
 	}
 
 	if download {

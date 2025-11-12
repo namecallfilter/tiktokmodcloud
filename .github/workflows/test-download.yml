@@ -30,10 +30,10 @@ jobs:
           name: tiktokmodcloud-binary
           path: ./bin
 
-      - name: Make binary executable
+      - name: Make Binary Executable
         run: chmod +x ./bin/tiktokmodcloud
 
-      - name: Test download both
+      - name: Test Download Both
         run: |
           ./bin/tiktokmodcloud test -d
 
