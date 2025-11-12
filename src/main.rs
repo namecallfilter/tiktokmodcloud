@@ -73,7 +73,7 @@ async fn handle_action(download_type: DownloadType, check: bool, download: bool)
 	Ok(())
 }
 
-// TODO: Add tracer for logging
+// TODO: Implement tracing for logging
 
 #[tokio::main]
 async fn main() -> Result<()> {
