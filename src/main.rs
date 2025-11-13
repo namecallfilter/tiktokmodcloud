@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
 	dotenv().ok();
 
 	tracing_subscriber::registry()
-		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")))
+		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace")))
 		.with(
 			fmt::layer()
 				.with_target(true)

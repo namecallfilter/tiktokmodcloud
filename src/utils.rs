@@ -9,7 +9,7 @@ use tokio::{
 	fs::File,
 	io::{AsyncWriteExt, BufWriter},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
 
@@ -41,7 +41,7 @@ pub async fn download_file(
 	let output_dir = output_dir.unwrap_or("./apks");
 	let cookie = get_verification_cookie(referer).await?;
 
-	info!("Starting download from {}", download_url);
+	debug!("Starting download from {}", download_url);
 
 	let client = Client::builder()
 		.emulation(Emulation::Chrome142)
@@ -106,11 +106,13 @@ pub async fn download_file(
 		file_path.display()
 	));
 
+	info!("Download complete: {}", file_path.display());
+
 	Ok(file_path)
 }
 
 pub async fn extract_data_initial_page(url: &str) -> Result<InitialPageData> {
-	info!("Fetching initial page data from: {}", url);
+	debug!("Fetching initial page data from: {}", url);
 
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 
@@ -175,7 +177,7 @@ pub async fn extract_data_initial_page(url: &str) -> Result<InitialPageData> {
 		sitekey,
 	};
 
-	debug!(
+	trace!(
 		"Successfully fetched initial page data: {:#?}",
 		initial_page_data
 	);
@@ -194,7 +196,7 @@ pub async fn get_verification_cookie(page_url: &str) -> Result<String> {
 
 	let captcha_token = solve_turnstile(sitekey, page_url.to_string()).await?;
 
-	info!("Verifying captcha solution with the website...");
+	debug!("Verifying captcha solution with the website...");
 
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 

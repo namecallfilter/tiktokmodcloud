@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Result};
 use rand::Rng;
 use regex::Regex;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
 
@@ -87,7 +87,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
 
-	info!("Fetching initial page: {}", start_url);
+	debug!("Fetching initial page: {}", start_url);
 
 	let gate_page_text = get_with_retry(&client, &start_url, &start_url, 5)
 		.await?
@@ -104,7 +104,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 		.context("Failed to extract gate URL from match")?
 		.as_str();
 
-	info!("Fetching gate page: {}", gate_url);
+	debug!("Fetching gate page: {}", gate_url);
 
 	let gate_response = get_with_retry(&client, gate_url, &start_url, 5).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
@@ -121,7 +121,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 			.context("Failed to extract lazy redirect URL")?
 			.as_str();
 
-		info!("Resolving final mirror URL from: {}", lazy_redirect_url);
+		debug!("Resolving final mirror URL from: {}", lazy_redirect_url);
 
 		let mirror_response = get_with_retry(&client, lazy_redirect_url, &start_url, 5).await?;
 		mirror_response.uri().to_string()
@@ -129,7 +129,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 		gate_url_after_redirect
 	};
 
-	info!("Mirror URL: {}", mirror_url);
+	debug!("Mirror URL: {}", mirror_url);
 
 	let modsfire_page_text = get_with_retry(&client, &mirror_url, &start_url, 5)
 		.await?
@@ -147,7 +147,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 		.as_str()
 		.to_string();
 
-	info!("Modsfire URL: {}", modsfire_url);
+	debug!("Modsfire URL: {}", modsfire_url);
 
 	let direct_download_link = {
 		let re = Regex::new(r"/([^/]*)$")?;

@@ -2,7 +2,7 @@ use std::{env, time::Instant};
 
 use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, trace, warn};
 use wreq::Client;
 use wreq_util::Emulation;
 
@@ -12,20 +12,22 @@ const CREATE_TASK: &str = "https://api.capsolver.com/createTask";
 const GET_TASK_RESULT: &str = "https://api.capsolver.com/getTaskResult";
 const GET_BALANCE: &str = "https://api.capsolver.com/getBalance";
 
-#[derive(Debug, Serialize)]
+const MAX_RETRIES: u8 = 3;
+
+#[derive(Debug, Clone, Serialize)]
 pub enum TaskType {
 	#[serde(rename = "AntiTurnstileTaskProxyLess")]
 	Turnstile,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateTaskPayload {
 	client_key: String,
 	task: Task,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Task {
 	r#type: TaskType,
@@ -112,7 +114,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 		.task_id
 		.context("No taskId returned from Capsolver")?;
 
-	info!("Task {} created. Polling for solution...", task_id);
+	debug!("Task {} created. Polling for solution...", task_id);
 
 	let get_result_payload = GetResultPayload {
 		client_key: task_payload.client_key,
@@ -144,7 +146,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 		match get_result_data.status {
 			Some(TaskStatus::Ready) => {
 				let duration = start_time.elapsed().as_secs_f64();
-				debug!("Successfully obtained solution in {:.2}s.", duration);
+				info!("Successfully obtained solution in {:.2}s.", duration);
 
 				let solution = get_result_data
 					.solution
@@ -154,7 +156,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 			}
 			Some(TaskStatus::Failed) => bail!(CapSolverError::CaptchaSolve),
 			Some(TaskStatus::Idle) | Some(TaskStatus::Processing) | None => {
-				debug!("Solution is processing...")
+				trace!("Solution is processing...")
 			}
 			Some(TaskStatus::Unknown(status)) => bail!(CapSolverError::UnknownStatus(status)),
 		}
@@ -167,8 +169,6 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 
 	get_capsolver_balance(&capsolver_key).await?;
 
-	info!("Creating Capsolver task...");
-
 	let task_payload = CreateTaskPayload {
 		client_key: capsolver_key.clone(),
 		task: Task {
@@ -178,10 +178,28 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 		},
 	};
 
-	// TODO: Potentially add a retry mechanism
-	let Solution { token } = create_and_polltask(task_payload).await?;
+	let mut last_error = None;
 
-	Ok(token)
+	for attempt in 1..=MAX_RETRIES {
+		info!(
+			"Creating Capsolver task (attempt {}/{})",
+			attempt, MAX_RETRIES
+		);
+
+		match create_and_polltask(task_payload.clone()).await {
+			Ok(Solution { token }) => return Ok(token),
+			Err(e) => {
+				warn!("Attempt {} failed: {:#}", attempt, e);
+				last_error = Some(e);
+
+				if attempt < MAX_RETRIES {
+					tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+				}
+			}
+		}
+	}
+
+	Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All retry attempts failed")))
 }
 
 pub async fn get_capsolver_balance(capsolver_key: &str) -> Result<()> {
