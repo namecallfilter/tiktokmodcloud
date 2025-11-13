@@ -35,7 +35,7 @@ jobs:
 
       - name: Test Download Both
         run: |
-          ./bin/tiktokmodcloud test -d
+          ./bin/tiktokmodcloud both -d
 
           MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
           if [ -z "${MOD_FILE_PATH}" ]; then
