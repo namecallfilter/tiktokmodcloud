@@ -1,6 +1,6 @@
 # TikTokModCloud Downloader
 
-CLI tool to download the latest TikTok Mod and Plugin APK files from TikTokModCloud.
+Automated archive of TikTok Mod and Plugin APK files from TikTokModCloud. This repository includes a CLI tool for downloading the latest versions and automated workflows to maintain an up-to-date archive of all APK files.
 
 ## Setup
 
