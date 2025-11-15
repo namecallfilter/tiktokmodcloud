@@ -6,6 +6,8 @@ use serde::Serialize;
 use tracing::{Instrument, info_span};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use utils::{download_file, extract_data_initial_page};
+use wreq::{Client, redirect};
+use wreq_util::Emulation;
 
 use crate::utils::InitialPageData;
 
@@ -62,20 +64,20 @@ struct CheckOutput {
 }
 
 async fn handle_action(
-	download_type: DownloadType, check: bool, download: bool, json_output: bool,
+	client: &Client, download_type: DownloadType, check: bool, download: bool, json_output: bool,
 ) -> Result<()> {
 	if check == download {
 		bail!("Error: Please specify exactly one action: --check (-c) or --download (-d).");
 	}
 
-	let (download_link, referer) = get_download_links(download_type).await?;
+	let (download_link, referer) = get_download_links(client, download_type).await?;
 
 	if check {
 		let InitialPageData {
 			file_id,
 			file_upload_date,
 			..
-		} = extract_data_initial_page(&referer).await?;
+		} = extract_data_initial_page(client, &referer).await?;
 
 		let version = file_id.split('_').next().unwrap_or(&file_id);
 
@@ -99,7 +101,7 @@ async fn handle_action(
 	}
 
 	if download {
-		download_file(&download_link, &referer, None).await?;
+		download_file(client, &download_link, &referer, None).await?;
 	}
 
 	Ok(())
@@ -125,19 +127,25 @@ async fn main() -> Result<()> {
 	let cli = Cli::parse();
 	let json_output = cli.json;
 
+	let client = Client::builder()
+		.emulation(Emulation::Chrome142)
+		.redirect(redirect::Policy::limited(10))
+		.cookie_store(true)
+		.build()?;
+
 	match cli.command {
 		Commands::Mod { check, download } => {
-			handle_action(DownloadType::Mod, check, download, json_output).await?;
+			handle_action(&client, DownloadType::Mod, check, download, json_output).await?;
 		}
 		Commands::Plugin { check, download } => {
-			handle_action(DownloadType::Plugin, check, download, json_output).await?;
+			handle_action(&client, DownloadType::Plugin, check, download, json_output).await?;
 		}
 		Commands::Both { check, download } => {
-			handle_action(DownloadType::Mod, check, download, json_output)
+			handle_action(&client, DownloadType::Mod, check, download, json_output)
 				.instrument(info_span!("both", type = "mod"))
 				.await?;
 
-			handle_action(DownloadType::Plugin, check, download, json_output)
+			handle_action(&client, DownloadType::Plugin, check, download, json_output)
 				.instrument(info_span!("both", type = "plugin"))
 				.await?;
 		}

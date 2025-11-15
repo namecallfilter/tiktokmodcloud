@@ -39,8 +39,6 @@ pub enum UtilsError {
 
 	#[error("Website rejected the verification")]
 	VerificationRejection,
-	#[error("Verification was successful, but no 'Set-Cookie' header was returned")]
-	VerificationNoSetCookie,
 
 	#[error("Network request failed: {0}")]
 	Wreq(#[from] wreq::Error),

@@ -2,8 +2,7 @@ use anyhow::{Context as _, Result};
 use rand::Rng;
 use regex::Regex;
 use tracing::{debug, warn};
-use wreq::{Client, redirect};
-use wreq_util::Emulation;
+use wreq::Client;
 
 use crate::error::ScrapeError;
 
@@ -79,17 +78,14 @@ async fn get_with_retry(
 	Err(last_error.unwrap())
 }
 
-pub async fn get_download_links(download_type: DownloadType) -> Result<(String, String)> {
-	let client = Client::builder()
-		.emulation(Emulation::Chrome142)
-		.redirect(redirect::Policy::limited(10))
-		.build()?;
-
+pub async fn get_download_links(
+	client: &Client, download_type: DownloadType,
+) -> Result<(String, String)> {
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
 
 	debug!("Fetching initial page: {}", start_url);
 
-	let gate_page_text = get_with_retry(&client, &start_url, &start_url, 5)
+	let gate_page_text = get_with_retry(client, &start_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
@@ -106,7 +102,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	debug!("Fetching gate page: {}", gate_url);
 
-	let gate_response = get_with_retry(&client, gate_url, &start_url, 5).await?;
+	let gate_response = get_with_retry(client, gate_url, &start_url, 5).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
 
 	let mirror_url = if gate_url_after_redirect.contains("file-download") {
@@ -123,7 +119,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 		debug!("Resolving final mirror URL from: {}", lazy_redirect_url);
 
-		let mirror_response = get_with_retry(&client, lazy_redirect_url, &start_url, 5).await?;
+		let mirror_response = get_with_retry(client, lazy_redirect_url, &start_url, 5).await?;
 		mirror_response.uri().to_string()
 	} else {
 		gate_url_after_redirect
@@ -131,7 +127,7 @@ pub async fn get_download_links(download_type: DownloadType) -> Result<(String, 
 
 	debug!("Mirror URL: {}", mirror_url);
 
-	let modsfire_page_text = get_with_retry(&client, &mirror_url, &start_url, 5)
+	let modsfire_page_text = get_with_retry(client, &mirror_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
