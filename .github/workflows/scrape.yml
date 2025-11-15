@@ -93,4 +93,8 @@ jobs:
           tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_info.outputs.DATE_TAG }}
           name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
           files: ${{ steps.download_artifact.outputs.FILE_PATH }}
-          body: Automated release for ${{ matrix.type }} version ${{ steps.get_info.outputs.VERSION }} uploaded on ${{ steps.get_info.outputs.DATE }}
+          body: |
+            Automated release for ${{ matrix.type }}
+
+            Version ${{ steps.get_info.outputs.VERSION }}
+            Uploaded on ${{ steps.get_info.outputs.DATE }}
