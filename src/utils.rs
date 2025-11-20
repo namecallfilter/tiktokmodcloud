@@ -170,11 +170,11 @@ pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<Ini
 fn parse_upload_date(raw_text: &str) -> Result<String> {
 	let text = raw_text.trim();
 
-	if NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").is_ok() {
-		return Ok(text.to_string());
+	if let Ok(dt) = NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M") {
+		return Ok(dt.format("%Y-%m-%d").to_string());
 	}
 
-	let relative_regex = Regex::new(r"(\d+)\s+(hour|day|week|month|year)s?\s+ago")?;
+	let relative_regex = Regex::new(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago")?;
 
 	if let Some(caps) = relative_regex.captures(text) {
 		let amount: i64 = caps[1].parse()?;
@@ -182,7 +182,9 @@ fn parse_upload_date(raw_text: &str) -> Result<String> {
 
 		let now = Local::now().naive_local();
 
-		let approximate_time = match unit {
+		let calculated_date = match unit {
+			"second" => now - Duration::seconds(amount),
+			"minute" => now - Duration::minutes(amount),
 			"hour" => now - Duration::hours(amount),
 			"day" => now - Duration::days(amount),
 			"week" => now - Duration::weeks(amount),
@@ -191,20 +193,7 @@ fn parse_upload_date(raw_text: &str) -> Result<String> {
 			_ => now,
 		};
 
-		let stable_time = match unit {
-			"hour" => approximate_time
-				.date()
-				.and_hms_opt(approximate_time.hour(), 0, 0)
-				.unwrap(),
-
-			"day" | "week" | "month" | "year" => {
-				approximate_time.date().and_hms_opt(0, 0, 0).unwrap()
-			}
-
-			_ => unreachable!(),
-		};
-
-		return Ok(stable_time.format("%Y-%m-%d %H:%M").to_string());
+		return Ok(calculated_date.format("%Y-%m-%d").to_string());
 	}
 
 	bail!("Date format not recognized: {}", text)
