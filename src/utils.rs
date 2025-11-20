@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
-use chrono::{Duration, Local, NaiveDateTime};
+use chrono::{Duration, Local, NaiveDateTime, Timelike};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
@@ -174,7 +174,7 @@ fn parse_upload_date(raw_text: &str) -> Result<String> {
 		return Ok(text.to_string());
 	}
 
-	let relative_regex = Regex::new(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago")?;
+	let relative_regex = Regex::new(r"(\d+)\s+(hour|day|week|month|year)s?\s+ago")?;
 
 	if let Some(caps) = relative_regex.captures(text) {
 		let amount: i64 = caps[1].parse()?;
@@ -182,19 +182,29 @@ fn parse_upload_date(raw_text: &str) -> Result<String> {
 
 		let now = Local::now().naive_local();
 
-		let duration = match unit {
-			"second" => Duration::seconds(amount),
-			"minute" => Duration::minutes(amount),
-			"hour" => Duration::hours(amount),
-			"day" => Duration::days(amount),
-			"week" => Duration::weeks(amount),
-			"month" => Duration::days(amount * 30),
-			"year" => Duration::days(amount * 365),
-			_ => Duration::zero(),
+		let approximate_time = match unit {
+			"hour" => now - Duration::hours(amount),
+			"day" => now - Duration::days(amount),
+			"week" => now - Duration::weeks(amount),
+			"month" => now - Duration::days(amount * 30),
+			"year" => now - Duration::days(amount * 365),
+			_ => now,
 		};
 
-		let final_date = now - duration;
-		return Ok(final_date.format("%Y-%m-%d %H:%M").to_string());
+		let stable_time = match unit {
+			"hour" => approximate_time
+				.date()
+				.and_hms_opt(approximate_time.hour(), 0, 0)
+				.unwrap(),
+
+			"day" | "week" | "month" | "year" => {
+				approximate_time.date().and_hms_opt(0, 0, 0).unwrap()
+			}
+
+			_ => unreachable!(),
+		};
+
+		return Ok(stable_time.format("%Y-%m-%d %H:%M").to_string());
 	}
 
 	bail!("Date format not recognized: {}", text)
