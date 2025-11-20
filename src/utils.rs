@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
+use chrono::{Duration, Local, NaiveDateTime};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
@@ -103,6 +104,8 @@ pub async fn download_file(
 	Ok(file_path)
 }
 
+// TODO: Switch out regex for html parser
+
 pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<InitialPageData> {
 	debug!("Fetching initial page data from: {}", url);
 
@@ -130,13 +133,16 @@ pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<Ini
 		.as_str()
 		.to_string();
 
-	let file_upload_date_regex = Regex::new(r#"(?:^|\D)(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:$|\D)"#)?;
-	let file_upload_date = file_upload_date_regex
+	let date_html_regex =
+		Regex::new(r#"(?s)data-bs-original-title="File upload date".*?<p>\s*(.*?)\s*</p>"#)?;
+	let raw_date_text = date_html_regex
 		.captures(&page_html)
 		.and_then(|cap| cap.get(1))
-		.context("Failed to extract File ID")?
-		.as_str()
-		.to_string();
+		.context("Failed to find File Upload Date HTML block")?
+		.as_str();
+
+	let file_upload_date =
+		parse_upload_date(raw_date_text).context("Failed to parse date string")?;
 
 	let sitekey_regex = Regex::new(r#"class="cf-turnstile"[^>]+data-sitekey="([^"]+)""#)?;
 	let sitekey = sitekey_regex
@@ -159,6 +165,39 @@ pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<Ini
 	);
 
 	Ok(initial_page_data)
+}
+
+fn parse_upload_date(raw_text: &str) -> Result<String> {
+	let text = raw_text.trim();
+
+	if NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").is_ok() {
+		return Ok(text.to_string());
+	}
+
+	let relative_regex = Regex::new(r"(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago")?;
+
+	if let Some(caps) = relative_regex.captures(text) {
+		let amount: i64 = caps[1].parse()?;
+		let unit = &caps[2];
+
+		let now = Local::now().naive_local();
+
+		let duration = match unit {
+			"second" => Duration::seconds(amount),
+			"minute" => Duration::minutes(amount),
+			"hour" => Duration::hours(amount),
+			"day" => Duration::days(amount),
+			"week" => Duration::weeks(amount),
+			"month" => Duration::days(amount * 30),
+			"year" => Duration::days(amount * 365),
+			_ => Duration::zero(),
+		};
+
+		let final_date = now - duration;
+		return Ok(final_date.format("%Y-%m-%d %H:%M").to_string());
+	}
+
+	bail!("Date format not recognized: {}", text)
 }
 
 pub async fn get_verification_cookie(client: &Client, page_url: &str) -> Result<()> {
