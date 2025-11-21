@@ -1,17 +1,15 @@
-use anyhow::{Result, bail};
-use clap::{Parser, Subcommand};
+use anyhow::Result;
+use clap::{Args, Parser, Subcommand};
 use dotenvy::dotenv;
-use scrape::{DownloadType, get_download_links};
-use serde::Serialize;
 use tracing::{Instrument, info_span};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use utils::{download_file, extract_data_initial_page};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
 
-use crate::utils::InitialPageData;
+use crate::scrape::DownloadType;
 
 mod capsolver;
+mod cli;
 mod error;
 mod scrape;
 mod utils;
@@ -30,75 +28,21 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
 	/// Select the mod
-	Mod {
-		#[arg(short, long, help = "Check for the latest version")]
-		check: bool,
-
-		#[arg(short, long, help = "Download the latest version")]
-		download: bool,
-	},
+	Mod(ActionArgs),
 	/// Select the plugin
-	Plugin {
-		#[arg(short, long, help = "Check for the latest version")]
-		check: bool,
-
-		#[arg(short, long, help = "Download the latest version")]
-		download: bool,
-	},
+	Plugin(ActionArgs),
 	/// Both mod and plugin
-	Both {
-		#[arg(short, long, help = "Check for the latest versions")]
-		check: bool,
-
-		#[arg(short, long, help = "Download the latest versions")]
-		download: bool,
-	},
+	Both(ActionArgs),
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CheckOutput {
-	version: String,
-	suffix: Option<String>,
-}
+#[derive(Args, Clone, Copy)]
+#[group(required = true, multiple = false)]
+struct ActionArgs {
+	#[arg(short, long, help = "Check for the latest version")]
+	check: bool,
 
-async fn handle_action(
-	client: &Client, download_type: DownloadType, check: bool, download: bool, json_output: bool,
-) -> Result<()> {
-	if check == download {
-		bail!("Error: Please specify exactly one action: --check (-c) or --download (-d).");
-	}
-
-	let (download_link, referer) = get_download_links(client, download_type).await?;
-
-	if check {
-		let InitialPageData { file_id, .. } = extract_data_initial_page(client, &referer).await?;
-
-		let version = file_id.split('_').next().unwrap_or(&file_id);
-		let suffix = file_id
-			.rsplit('_')
-			.next()
-			.map(|s| s.strip_suffix(".apk").unwrap_or(s))
-			.filter(|&s| s != "plugin" && s != "universal")
-			.map(|s| s.to_string());
-
-		if json_output {
-			let output = CheckOutput {
-				version: version.to_string(),
-				suffix,
-			};
-
-			println!("{}", serde_json::to_string(&output)?);
-		} else {
-			println!("Version: {}", version);
-		}
-	}
-
-	if download {
-		download_file(client, &download_link, &referer, None).await?;
-	}
-
-	Ok(())
+	#[arg(short, long, help = "Download the latest version")]
+	download: bool,
 }
 
 #[tokio::main]
@@ -106,7 +50,9 @@ async fn main() -> Result<()> {
 	dotenv().ok();
 
 	tracing_subscriber::registry()
-		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace")))
+		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+			EnvFilter::new(format!("{}={}", env!("CARGO_CRATE_NAME"), "trace"))
+		}))
 		.with(
 			fmt::layer()
 				.with_target(true)
@@ -128,20 +74,46 @@ async fn main() -> Result<()> {
 		.build()?;
 
 	match cli.command {
-		Commands::Mod { check, download } => {
-			handle_action(&client, DownloadType::Mod, check, download, json_output).await?;
+		Commands::Mod(args) => {
+			cli::handle_action(
+				&client,
+				DownloadType::Mod,
+				args.check,
+				args.download,
+				json_output,
+			)
+			.await?;
 		}
-		Commands::Plugin { check, download } => {
-			handle_action(&client, DownloadType::Plugin, check, download, json_output).await?;
+		Commands::Plugin(args) => {
+			cli::handle_action(
+				&client,
+				DownloadType::Plugin,
+				args.check,
+				args.download,
+				json_output,
+			)
+			.await?;
 		}
-		Commands::Both { check, download } => {
-			handle_action(&client, DownloadType::Mod, check, download, json_output)
-				.instrument(info_span!("both", type = "mod"))
-				.await?;
+		Commands::Both(args) => {
+			cli::handle_action(
+				&client,
+				DownloadType::Mod,
+				args.check,
+				args.download,
+				json_output,
+			)
+			.instrument(info_span!("both", type = "mod"))
+			.await?;
 
-			handle_action(&client, DownloadType::Plugin, check, download, json_output)
-				.instrument(info_span!("both", type = "plugin"))
-				.await?;
+			cli::handle_action(
+				&client,
+				DownloadType::Plugin,
+				args.check,
+				args.download,
+				json_output,
+			)
+			.instrument(info_span!("both", type = "plugin"))
+			.await?;
 		}
 	}
 

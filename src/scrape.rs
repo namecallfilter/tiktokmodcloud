@@ -1,6 +1,7 @@
 use anyhow::{Context as _, Result};
 use rand::Rng;
 use regex::Regex;
+use scraper::{Html, Selector};
 use tracing::{debug, warn};
 use wreq::Client;
 
@@ -9,7 +10,7 @@ use crate::error::ScrapeError;
 const MAX_DELAY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy)]
-pub enum DownloadType {
+pub(crate) enum DownloadType {
 	Mod,
 	Plugin,
 }
@@ -78,7 +79,7 @@ async fn get_with_retry(
 	Err(last_error.unwrap())
 }
 
-pub async fn get_download_links(
+pub(crate) async fn get_download_links(
 	client: &Client, download_type: DownloadType,
 ) -> Result<(String, String)> {
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
@@ -90,32 +91,31 @@ pub async fn get_download_links(
 		.text()
 		.await?;
 
-	let gate_regex = Regex::new(r"href='([^']*)'[^>]*?>\s*MIRROR(?:\s+\d+)?\s*</a>")?;
-	let gate_match = gate_regex
-		.captures(&gate_page_text)
-		.context("Failed to find the mirror gate URL.")?;
+	let document = Html::parse_document(&gate_page_text);
+	let selector = Selector::parse("a").unwrap();
 
-	let gate_url = gate_match
-		.get(1)
-		.context("Failed to extract gate URL from match")?
-		.as_str();
+	let gate_url = document
+		.select(&selector)
+		.find(|el| el.text().collect::<String>().contains("MIRROR"))
+		.and_then(|el| el.value().attr("href"))
+		.context("Failed to find mirror gate URL")?
+		.to_string();
 
 	debug!("Fetching gate page: {}", gate_url);
 
-	let gate_response = get_with_retry(client, gate_url, &start_url, 5).await?;
+	let gate_response = get_with_retry(client, &gate_url, &start_url, 5).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
 
 	let mirror_url = if gate_url_after_redirect.contains("file-download") {
 		let lazy_redirect_page_text = gate_response.text().await?;
-		let lazy_redirect_regex = Regex::new(r"href='([^']*)'[^>]rel='noreferrer'")?;
-		let lazy_redirect_match = lazy_redirect_regex
-			.captures(&lazy_redirect_page_text)
-			.context("Failed to find the lazy redirect URL.")?;
+		let lazy_doc = Html::parse_document(&lazy_redirect_page_text);
+		let lazy_selector = Selector::parse("a[rel='noreferrer']").unwrap();
 
-		let lazy_redirect_url = lazy_redirect_match
-			.get(1)
-			.context("Failed to extract lazy redirect URL")?
-			.as_str();
+		let lazy_redirect_url = lazy_doc
+			.select(&lazy_selector)
+			.next()
+			.and_then(|el| el.value().attr("href"))
+			.context("Failed to find the lazy redirect URL")?;
 
 		debug!("Resolving final mirror URL from: {}", lazy_redirect_url);
 

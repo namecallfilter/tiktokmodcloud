@@ -1,9 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+	marker::PhantomData,
+	path::{Path, PathBuf},
+};
 
 use anyhow::{Context as _, Result, bail};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use regex::Regex;
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use tokio::{
 	fs::File,
@@ -15,7 +18,7 @@ use wreq::Client;
 use crate::{capsolver::solve_turnstile, error::UtilsError};
 
 #[derive(Debug, Clone)]
-pub struct InitialPageData {
+pub(crate) struct InitialPageData {
 	pub csrf_token: String,
 	pub file_id: String,
 	pub sitekey: String,
@@ -32,79 +35,151 @@ struct VerifyPayload {
 	file_id: String,
 }
 
-pub async fn download_file(
-	client: &Client, download_url: &str, referer: &str, output_dir: Option<&str>,
-) -> Result<PathBuf> {
-	let output_dir = output_dir.unwrap_or("./apks");
-	get_verification_cookie(client, referer).await?;
+pub struct Unverified;
+pub struct Verified;
 
-	debug!("Starting download from {}", download_url);
-
-	let response = client
-		.get(download_url)
-		.header("Referer", referer)
-		.send()
-		.await?;
-
-	if !response.status().is_success() {
-		bail!(UtilsError::DownloadFile(response.status()));
-	}
-
-	let total_size = response
-		.content_length()
-		.context("Content-Length header not found, might not be apk download")?;
-
-	let pb = ProgressBar::new(total_size);
-	pb.set_style(ProgressStyle::default_bar()
-			.template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
-			.progress_chars("#>-"));
-	pb.set_message("Downloading...");
-
-	let final_url = response.uri().to_string();
-	let filename = final_url
-		.split('/')
-		.next_back()
-		.unwrap_or("downloaded_file")
-		.split('?')
-		.next()
-		.unwrap_or("downloaded_file")
-		.to_string();
-
-	let file_path = Path::new(output_dir).join(&filename);
-
-	tokio::fs::create_dir_all(output_dir).await?;
-
-	let file = File::create(&file_path).await?;
-	let mut writer = BufWriter::new(file);
-
-	let mut downloaded_size = 0u64;
-
-	let mut stream = response.bytes_stream();
-
-	while let Some(chunk) = stream.next().await {
-		let chunk = chunk?;
-		writer.write_all(&chunk).await?;
-
-		downloaded_size += chunk.len() as u64;
-
-		pb.set_position(downloaded_size);
-	}
-
-	writer.flush().await?;
-
-	pb.finish_with_message(format!(
-		"File downloaded successfully: {}",
-		file_path.display()
-	));
-
-	info!("Download complete: {}", file_path.display());
-
-	Ok(file_path)
+pub struct Downloader<State = Unverified> {
+	client: Client,
+	_state: PhantomData<State>,
 }
 
-// TODO: Switch out regex for html parser
+impl Downloader<Unverified> {
+	pub fn new(client: Client) -> Self {
+		Self {
+			client,
+			_state: PhantomData,
+		}
+	}
 
-pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<InitialPageData> {
+	#[must_use = "Verification returns a new verified Downloader that must be used"]
+	pub async fn verify(self, page_url: &str) -> Result<Downloader<Verified>> {
+		let InitialPageData {
+			csrf_token,
+			file_id,
+			sitekey,
+			..
+		} = extract_data_initial_page(&self.client, page_url).await?;
+
+		let captcha_token = solve_turnstile(sitekey, page_url.to_string()).await?;
+
+		debug!("Verifying captcha solution with the website...");
+
+		let verify_payload = VerifyPayload {
+			token: captcha_token,
+			file_id,
+		};
+
+		let verify_response = self
+			.client
+			.post("https://modsfire.com/verify-cf-captcha")
+			.header("Content-Type", "application/json")
+			.header("X-CSRF-TOKEN", &csrf_token)
+			.json(&verify_payload)
+			.send()
+			.await?;
+
+		if !verify_response.status().is_success() {
+			bail!(
+				"Failed to verify captcha: {} {}",
+				verify_response.status().as_u16(),
+				verify_response
+					.status()
+					.canonical_reason()
+					.unwrap_or("Unknown")
+			);
+		}
+
+		let response_data: VerifyResponse = verify_response.json().await?;
+
+		if response_data.success {
+			info!("Successfully obtained verification cookie!");
+
+			Ok(Downloader {
+				client: self.client,
+				_state: PhantomData,
+			})
+		} else {
+			bail!(UtilsError::VerificationRejection);
+		}
+	}
+}
+
+impl Downloader<Verified> {
+	#[tracing::instrument(skip(self))]
+	pub async fn download_file(
+		&self, download_url: &str, referer: &str, output_dir: Option<&str>,
+	) -> Result<PathBuf> {
+		let output_dir = output_dir.unwrap_or("./apks");
+
+		debug!("Starting download from {}", download_url);
+
+		let response = self
+			.client
+			.get(download_url)
+			.header("Referer", referer)
+			.send()
+			.await?;
+
+		if !response.status().is_success() {
+			bail!(UtilsError::DownloadFile(response.status()));
+		}
+
+		let total_size = response
+			.content_length()
+			.context("Content-Length header not found, might not be apk download")?;
+
+		let pb = ProgressBar::new(total_size);
+		pb.set_style(ProgressStyle::default_bar()
+			.template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
+			.progress_chars("#>-"));
+		pb.set_message("Downloading...");
+
+		let final_url = response.uri().to_string();
+		let filename = final_url
+			.split('/')
+			.next_back()
+			.unwrap_or("downloaded_file")
+			.split('?')
+			.next()
+			.unwrap_or("downloaded_file")
+			.to_string();
+
+		let file_path = Path::new(output_dir).join(&filename);
+
+		tokio::fs::create_dir_all(output_dir).await?;
+
+		let file = File::create(&file_path).await?;
+		let mut writer = BufWriter::new(file);
+
+		let mut downloaded_size = 0u64;
+
+		let mut stream = response.bytes_stream();
+
+		while let Some(chunk) = stream.next().await {
+			let chunk = chunk?;
+			writer.write_all(&chunk).await?;
+
+			downloaded_size += chunk.len() as u64;
+
+			pb.set_position(downloaded_size);
+		}
+
+		writer.flush().await?;
+
+		pb.finish_with_message(format!(
+			"File downloaded successfully: {}",
+			file_path.display()
+		));
+
+		info!("Download complete: {}", file_path.display());
+
+		Ok(file_path)
+	}
+}
+
+pub(crate) async fn extract_data_initial_page(
+	client: &Client, url: &str,
+) -> Result<InitialPageData> {
 	debug!("Fetching initial page data from: {}", url);
 
 	let page_response = client.get(url).send().await?;
@@ -114,29 +189,36 @@ pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<Ini
 	}
 
 	let page_html = page_response.text().await?;
+	let document = Html::parse_document(&page_html);
 
-	let csrf_regex = Regex::new(r#"<input[^>]+name="_token"[^>]+value="([^"]+)""#)?;
-	let csrf_token = csrf_regex
-		.captures(&page_html)
-		.and_then(|cap| cap.get(1))
-		.context("Failed to extract CSRF token")?
-		.as_str()
+	let csrf_selector = Selector::parse(r#"input[name="_token"]"#).unwrap();
+	let csrf_token = document
+		.select(&csrf_selector)
+		.next()
+		.context("Failed to find CSRF token element")?
+		.value()
+		.attr("value")
+		.context("Failed to extract CSRF token value")?
 		.to_string();
 
-	let file_id_regex = Regex::new(r#"<input[^>]+id="file_id"[^>]+value="([^"]+)""#)?;
-	let file_id = file_id_regex
-		.captures(&page_html)
-		.and_then(|cap| cap.get(1))
-		.context("Failed to extract File ID")?
-		.as_str()
+	let file_id_selector = Selector::parse(r#"input#file_id"#).unwrap();
+	let file_id = document
+		.select(&file_id_selector)
+		.next()
+		.context("Failed to find File ID element")?
+		.value()
+		.attr("value")
+		.context("Failed to extract File ID value")?
 		.to_string();
 
-	let sitekey_regex = Regex::new(r#"class="cf-turnstile"[^>]+data-sitekey="([^"]+)""#)?;
-	let sitekey = sitekey_regex
-		.captures(&page_html)
-		.and_then(|cap| cap.get(1))
-		.context("Failed to extract Sitekey")?
-		.as_str()
+	let sitekey_selector = Selector::parse(r#".cf-turnstile"#).unwrap();
+	let sitekey = document
+		.select(&sitekey_selector)
+		.next()
+		.context("Failed to find Sitekey element")?
+		.value()
+		.attr("data-sitekey")
+		.context("Failed to extract Sitekey value")?
 		.to_string();
 
 	let initial_page_data = InitialPageData {
@@ -151,51 +233,4 @@ pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<Ini
 	);
 
 	Ok(initial_page_data)
-}
-
-pub async fn get_verification_cookie(client: &Client, page_url: &str) -> Result<()> {
-	let InitialPageData {
-		csrf_token,
-		file_id,
-		sitekey,
-		..
-	} = extract_data_initial_page(client, page_url).await?;
-
-	let captcha_token = solve_turnstile(sitekey, page_url.to_string()).await?;
-
-	debug!("Verifying captcha solution with the website...");
-
-	let verify_payload = VerifyPayload {
-		token: captcha_token,
-		file_id,
-	};
-
-	let verify_response = client
-		.post("https://modsfire.com/verify-cf-captcha")
-		.header("Content-Type", "application/json")
-		.header("X-CSRF-TOKEN", &csrf_token)
-		.json(&verify_payload)
-		.send()
-		.await?;
-
-	if !verify_response.status().is_success() {
-		bail!(
-			"Failed to verify captcha: {} {}",
-			verify_response.status().as_u16(),
-			verify_response
-				.status()
-				.canonical_reason()
-				.unwrap_or("Unknown")
-		);
-	}
-
-	let response_data: VerifyResponse = verify_response.json().await?;
-
-	if response_data.success {
-		info!("Successfully obtained verification cookie!");
-
-		Ok(())
-	} else {
-		bail!(UtilsError::VerificationRejection);
-	}
 }
