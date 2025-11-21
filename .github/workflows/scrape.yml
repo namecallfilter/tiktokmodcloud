@@ -53,13 +53,12 @@ jobs:
           echo "Discovered info: ${JSON_INFO}"
 
           echo "VERSION=$(jq -r .version <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
-          echo "DATE=$(jq -r .uploadDate <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
-          echo "DATE_TAG=$(jq -r .dateTag <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+          echo "SUFFIX=$(jq -r 'if .suffix then "-" + .suffix else "" end' <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
 
       - name: Check if Release Already Exists
         id: check_release
         run: |
-          TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_info.outputs.DATE_TAG }}"
+          TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}"
           echo "Checking for existing release with tag: ${TAG_NAME}"
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
@@ -90,11 +89,10 @@ jobs:
         if: steps.download_artifact.outputs.FILE_PATH
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}-${{ steps.get_info.outputs.DATE_TAG }}
+          tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}
           name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
           files: ${{ steps.download_artifact.outputs.FILE_PATH }}
           body: |
             Automated release for ${{ matrix.type }}
 
             Version ${{ steps.get_info.outputs.VERSION }}
-            Uploaded on ${{ steps.get_info.outputs.DATE }}
