@@ -15,7 +15,7 @@ const GET_BALANCE: &str = "https://api.capsolver.com/getBalance";
 const MAX_RETRIES: u8 = 3;
 
 #[derive(Debug, Clone, Serialize)]
-pub enum TaskType {
+pub(crate) enum TaskType {
 	#[serde(rename = "AntiTurnstileTaskProxyLess")]
 	Turnstile,
 }
@@ -44,7 +44,7 @@ struct GetResultPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum TaskStatus {
+pub(crate) enum TaskStatus {
 	Idle,
 	Processing,
 	Ready,
@@ -163,7 +163,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 	}
 }
 
-pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
+pub(crate) async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 	let capsolver_key =
 		env::var("CAPSOLVER_KEY").context("CAPSOLVER_KEY environment variable not set")?;
 
@@ -202,7 +202,7 @@ pub async fn solve_turnstile(site_key: String, url: String) -> Result<String> {
 	Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All retry attempts failed")))
 }
 
-pub async fn get_capsolver_balance(capsolver_key: &str) -> Result<()> {
+pub(crate) async fn get_capsolver_balance(capsolver_key: &str) -> Result<()> {
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 
 	let balance_payload = BalancePayload {
