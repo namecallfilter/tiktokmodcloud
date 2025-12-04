@@ -124,14 +124,22 @@ impl Downloader<Verified> {
 			bail!(UtilsError::DownloadFile(response.status()));
 		}
 
-		let total_size = response
-			.content_length()
-			.context("Content-Length header not found, might not be apk download")?;
+		let total_size = response.content_length();
 
-		let pb = ProgressBar::new(total_size);
-		pb.set_style(ProgressStyle::default_bar()
-			.template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
-			.progress_chars("#>-"));
+		let pb = if let Some(size) = total_size {
+			let pb = ProgressBar::new(size);
+			pb.set_style(ProgressStyle::default_bar()
+				.template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
+				.progress_chars("#>-"));
+			pb
+		} else {
+			let pb = ProgressBar::new_spinner();
+			pb.set_style(ProgressStyle::default_spinner().template(
+				"{msg}\n{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})",
+			)?);
+			pb
+		};
+
 		pb.set_message("Downloading...");
 
 		let final_url = response.uri().to_string();

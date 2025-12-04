@@ -49,7 +49,6 @@ pub(crate) enum TaskStatus {
 	Processing,
 	Ready,
 	Failed,
-	#[serde(untagged)]
 	Unknown(String),
 }
 
@@ -90,7 +89,7 @@ struct BalanceResponse {
 	balance: Option<f64>,
 }
 
-async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution> {
+async fn create_and_polltask(task_payload: &CreateTaskPayload) -> Result<Solution> {
 	let client = Client::builder().emulation(Emulation::Chrome142).build()?;
 
 	let create_task_resp = client
@@ -102,7 +101,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 
 	let create_task_data: CreateTaskResponse = create_task_resp.json().await?;
 
-	if create_task_data.error_id.is_some() && create_task_data.error_id != Some(0) {
+	if create_task_data.error_id.is_some_and(|id| id != 0) {
 		bail!(CapSolverError::TaskCreation(
 			create_task_data
 				.error_description
@@ -114,10 +113,10 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 		.task_id
 		.context("No taskId returned from Capsolver")?;
 
-	debug!("Task {} created. Polling for solution...", task_id);
+	debug!(task_id = %task_id, "Task created. Polling for solution...");
 
 	let get_result_payload = GetResultPayload {
-		client_key: task_payload.client_key,
+		client_key: task_payload.client_key.clone(),
 		task_id: task_id.clone(),
 	};
 
@@ -135,7 +134,7 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 
 		let get_result_data: GetTaskResponse = get_result_resp.json().await?;
 
-		if get_result_data.error_id.is_some() && get_result_data.error_id != Some(0) {
+		if get_result_data.error_id.is_some_and(|id| id != 0) {
 			bail!(CapSolverError::TaskResult(
 				get_result_data
 					.error_description
@@ -143,10 +142,17 @@ async fn create_and_polltask(task_payload: CreateTaskPayload) -> Result<Solution
 			));
 		}
 
+		if start_time.elapsed().as_secs() > 120 {
+			bail!(CapSolverError::TaskResult("Polling timed out".to_string()));
+		}
+
 		match get_result_data.status {
 			Some(TaskStatus::Ready) => {
 				let duration = start_time.elapsed().as_secs_f64();
-				info!("Successfully obtained solution in {:.2}s.", duration);
+				info!(
+					duration_secs = format!("{:.2}", duration),
+					"Successfully obtained solution"
+				);
 
 				let solution = get_result_data
 					.solution
@@ -182,14 +188,15 @@ pub(crate) async fn solve_turnstile(site_key: String, url: String) -> Result<Str
 
 	for attempt in 1..=MAX_RETRIES {
 		info!(
-			"Creating Capsolver task (attempt {}/{})",
-			attempt, MAX_RETRIES
+			attempt = attempt,
+			max = MAX_RETRIES,
+			"Creating Capsolver task"
 		);
 
-		match create_and_polltask(task_payload.clone()).await {
+		match create_and_polltask(&task_payload).await {
 			Ok(Solution { token }) => return Ok(token),
 			Err(e) => {
-				warn!("Attempt {} failed: {:#}", attempt, e);
+				warn!(attempt = attempt, error = %e, "Attempt failed");
 				last_error = Some(e);
 
 				if attempt < MAX_RETRIES {
@@ -225,7 +232,7 @@ pub(crate) async fn get_capsolver_balance(capsolver_key: &str) -> Result<()> {
 				.unwrap_or_else(|| "Unknown error".to_string())
 		))
 	} else if let Some(balance) = balance_data.balance {
-		info!("Capsolver Balance: ${}", balance);
+		info!(balance = balance, "Capsolver balance");
 	}
 
 	Ok(())

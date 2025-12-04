@@ -38,11 +38,11 @@ async fn get_with_retry(
 					let reason = status.canonical_reason().unwrap_or("Unknown Status");
 
 					warn!(
-						"Attempt {} failed with status {}: {}. Retrying in {}ms...",
-						i + 1,
-						status.as_u16(),
-						reason,
-						delay_ms
+						attempt = i + 1,
+						status = status.as_u16(),
+						reason = reason,
+						retry_delay_ms = delay_ms,
+						"Attempt failed"
 					);
 
 					last_error = Some(
@@ -58,17 +58,17 @@ async fn get_with_retry(
 			}
 			Err(e) => {
 				warn!(
-					"Attempt {} failed with request error: {}. Retrying in {}ms...",
-					i + 1,
-					e,
-					delay_ms
+					attempt = i + 1,
+					error = %e,
+					retry_delay_ms = delay_ms,
+					"Attempt failed with request error"
 				);
 
 				last_error = Some(ScrapeError::GetWithRetry(url.to_string(), e.to_string()).into());
 			}
 		}
 
-		if i < retries {
+		if i + 1 < retries {
 			let jitter_ms = rand::rng().random_range(0..=1000);
 			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms + jitter_ms)).await;
 
@@ -76,7 +76,9 @@ async fn get_with_retry(
 		}
 	}
 
-	Err(last_error.unwrap())
+	Err(last_error.unwrap_or_else(|| {
+		ScrapeError::GetWithRetry(url.to_string(), "No attempts made".to_string()).into()
+	}))
 }
 
 pub(crate) async fn get_download_links(
@@ -84,7 +86,7 @@ pub(crate) async fn get_download_links(
 ) -> Result<(String, String)> {
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
 
-	debug!("Fetching initial page: {}", start_url);
+	debug!(start_url = %start_url, "Fetching initial page");
 
 	let gate_page_text = get_with_retry(client, &start_url, &start_url, 5)
 		.await?
@@ -96,12 +98,15 @@ pub(crate) async fn get_download_links(
 
 	let gate_url = document
 		.select(&selector)
-		.find(|el| el.text().collect::<String>().contains("MIRROR"))
+		.find(|el| {
+			el.text().collect::<String>().contains("UNIVERSAL")
+				|| el.text().collect::<String>().contains("Plugin")
+		})
 		.and_then(|el| el.value().attr("href"))
 		.context("Failed to find mirror gate URL")?
 		.to_string();
 
-	debug!("Fetching gate page: {}", gate_url);
+	debug!(gate_url = %gate_url, "Fetching gate page");
 
 	let gate_response = get_with_retry(client, &gate_url, &start_url, 5).await?;
 	let gate_url_after_redirect = gate_response.uri().to_string();
@@ -117,7 +122,7 @@ pub(crate) async fn get_download_links(
 			.and_then(|el| el.value().attr("href"))
 			.context("Failed to find the lazy redirect URL")?;
 
-		debug!("Resolving final mirror URL from: {}", lazy_redirect_url);
+		debug!(lazy_redirect_url = %lazy_redirect_url, "Resolving final mirror URL");
 
 		let mirror_response = get_with_retry(client, lazy_redirect_url, &start_url, 5).await?;
 		mirror_response.uri().to_string()
@@ -125,25 +130,39 @@ pub(crate) async fn get_download_links(
 		gate_url_after_redirect
 	};
 
-	debug!("Mirror URL: {}", mirror_url);
+	debug!(mirror_url = %mirror_url, "Mirror URL");
 
-	let modsfire_page_text = get_with_retry(client, &mirror_url, &start_url, 5)
+	let countdown_page_text = get_with_retry(client, &mirror_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
 
-	let location_regex = Regex::new(r#"document\.location\.href\s*=\s*['"](.*?)['"]"#)?;
-	let location_match = location_regex
-		.captures(&modsfire_page_text)
-		.context("Failed to find the final Modsfire URL.")?;
+	let intermediate_regex =
+		Regex::new(r#"href\s*=\s*["'](https://go\.linkify\.ru/get/[^"']+)["']"#)?;
 
-	let modsfire_url = location_match
-		.get(1)
-		.context("Failed to extract modsfire URL")?
-		.as_str()
-		.to_string();
+	let intermediate_url = intermediate_regex
+		.captures(&countdown_page_text)
+		.and_then(|cap| cap.get(1))
+		.map(|m| m.as_str().to_string())
+		.context("Failed to find the intermediate linkify 'get' URL in the countdown script")?;
 
-	debug!("Modsfire URL: {}", modsfire_url);
+	debug!(intermediate_url = %intermediate_url, "Fetching intermediate redirect page");
+
+	let final_redirect_page_text = get_with_retry(client, &intermediate_url, &mirror_url, 5)
+		.await?
+		.text()
+		.await?;
+
+	let modsfire_regex =
+		Regex::new(r#"window\.location\.replace\(\s*['"](https://modsfire\.com/[^'"]+)['"]\s*\)"#)?;
+
+	let modsfire_url = modsfire_regex
+		.captures(&final_redirect_page_text)
+		.and_then(|cap| cap.get(1))
+		.map(|m| m.as_str().to_string())
+		.context("Failed to extract final modsfire URL from intermediate page")?;
+
+	debug!(modsfire_url = %modsfire_url, "Modsfire URL");
 
 	let direct_download_link = {
 		let re = Regex::new(r"/([^/]*)$")?;
