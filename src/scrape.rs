@@ -10,7 +10,7 @@ use crate::error::ScrapeError;
 const MAX_DELAY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum DownloadType {
+pub enum DownloadType {
 	Mod,
 	Plugin,
 }
@@ -81,7 +81,7 @@ async fn get_with_retry(
 	}))
 }
 
-pub(crate) async fn get_download_links(
+pub async fn get_download_links(
 	client: &Client, download_type: DownloadType,
 ) -> Result<(String, String)> {
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
@@ -94,7 +94,7 @@ pub(crate) async fn get_download_links(
 		.await?;
 
 	let document = Html::parse_document(&gate_page_text);
-	let selector = Selector::parse("a").unwrap();
+	let selector = Selector::parse("a").expect("Valid 'a' selector");
 
 	let gate_url = document
 		.select(&selector)
@@ -114,7 +114,8 @@ pub(crate) async fn get_download_links(
 	let mirror_url = if gate_url_after_redirect.contains("file-download") {
 		let lazy_redirect_page_text = gate_response.text().await?;
 		let lazy_doc = Html::parse_document(&lazy_redirect_page_text);
-		let lazy_selector = Selector::parse("a[rel='noreferrer']").unwrap();
+		let lazy_selector =
+			Selector::parse("a[rel='noreferrer']").expect("Valid 'a[rel=noreferrer]' selector");
 
 		let lazy_redirect_url = lazy_doc
 			.select(&lazy_selector)

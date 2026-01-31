@@ -18,7 +18,7 @@ use wreq::Client;
 use crate::{capsolver::solve_turnstile, error::UtilsError};
 
 #[derive(Debug, Clone)]
-pub(crate) struct InitialPageData {
+pub struct InitialPageData {
 	pub csrf_token: String,
 	pub file_id: String,
 	pub sitekey: String,
@@ -40,14 +40,16 @@ pub struct Verified;
 
 pub struct Downloader<State = Unverified> {
 	client: Client,
-	_state: PhantomData<State>,
+	filename: Option<String>,
+	phantom: PhantomData<State>,
 }
 
 impl Downloader<Unverified> {
 	pub fn new(client: Client) -> Self {
 		Self {
 			client,
-			_state: PhantomData,
+			filename: None,
+			phantom: PhantomData,
 		}
 	}
 
@@ -66,7 +68,7 @@ impl Downloader<Unverified> {
 
 		let verify_payload = VerifyPayload {
 			token: captcha_token,
-			file_id,
+			file_id: file_id.clone(),
 		};
 
 		let verify_response = self
@@ -96,7 +98,8 @@ impl Downloader<Unverified> {
 
 			Ok(Downloader {
 				client: self.client,
-				_state: PhantomData,
+				filename: Some(file_id),
+				phantom: PhantomData,
 			})
 		} else {
 			bail!(UtilsError::VerificationRejection);
@@ -142,15 +145,17 @@ impl Downloader<Verified> {
 
 		pb.set_message("Downloading...");
 
-		let final_url = response.uri().to_string();
-		let filename = final_url
-			.split('/')
-			.next_back()
-			.unwrap_or("downloaded_file")
-			.split('?')
-			.next()
-			.unwrap_or("downloaded_file")
-			.to_string();
+		let filename = self.filename.clone().unwrap_or_else(|| {
+			let final_url = response.uri().to_string();
+			final_url
+				.split('/')
+				.next_back()
+				.unwrap_or("downloaded_file")
+				.split('?')
+				.next()
+				.unwrap_or("downloaded_file")
+				.to_string()
+		});
 
 		let file_path = Path::new(output_dir).join(&filename);
 
@@ -185,9 +190,7 @@ impl Downloader<Verified> {
 	}
 }
 
-pub(crate) async fn extract_data_initial_page(
-	client: &Client, url: &str,
-) -> Result<InitialPageData> {
+pub async fn extract_data_initial_page(client: &Client, url: &str) -> Result<InitialPageData> {
 	debug!("Fetching initial page data from: {}", url);
 
 	let page_response = client.get(url).send().await?;
@@ -199,7 +202,7 @@ pub(crate) async fn extract_data_initial_page(
 	let page_html = page_response.text().await?;
 	let document = Html::parse_document(&page_html);
 
-	let csrf_selector = Selector::parse(r#"input[name="_token"]"#).unwrap();
+	let csrf_selector = Selector::parse(r#"input[name="_token"]"#).expect("Valid CSRF selector");
 	let csrf_token = document
 		.select(&csrf_selector)
 		.next()
@@ -209,7 +212,7 @@ pub(crate) async fn extract_data_initial_page(
 		.context("Failed to extract CSRF token value")?
 		.to_string();
 
-	let file_id_selector = Selector::parse(r#"input#file_id"#).unwrap();
+	let file_id_selector = Selector::parse(r#"input#file_id"#).expect("Valid File ID selector");
 	let file_id = document
 		.select(&file_id_selector)
 		.next()
@@ -219,7 +222,7 @@ pub(crate) async fn extract_data_initial_page(
 		.context("Failed to extract File ID value")?
 		.to_string();
 
-	let sitekey_selector = Selector::parse(r#".cf-turnstile"#).unwrap();
+	let sitekey_selector = Selector::parse(r#".cf-turnstile"#).expect("Valid Sitekey selector");
 	let sitekey = document
 		.select(&sitekey_selector)
 		.next()

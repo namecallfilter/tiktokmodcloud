@@ -9,12 +9,12 @@ use crate::{
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CheckOutput {
+pub struct CheckOutput {
 	version: String,
 	suffix: Option<String>,
 }
 
-pub(crate) async fn handle_action(
+pub async fn handle_action(
 	client: &Client, download_type: DownloadType, check: bool, download: bool, json_output: bool,
 ) -> Result<()> {
 	let (download_link, referer) = get_download_links(client, download_type).await?;

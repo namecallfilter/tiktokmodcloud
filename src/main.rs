@@ -1,18 +1,11 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use dotenvy::dotenv;
+use tiktokmodcloud::{cli, scrape::DownloadType};
 use tracing::{Instrument, info_span};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use wreq::{Client, redirect};
 use wreq_util::Emulation;
-
-use crate::scrape::DownloadType;
-
-mod capsolver;
-mod cli;
-mod error;
-mod scrape;
-mod utils;
 
 #[derive(Parser)]
 #[command(name = "tiktokmodcloud")]
@@ -65,10 +58,9 @@ async fn main() -> Result<()> {
 		.init();
 
 	let cli = Cli::parse();
-	let json_output = cli.json;
 
 	let client = Client::builder()
-		.emulation(Emulation::Chrome142)
+		.emulation(Emulation::Chrome143)
 		.redirect(redirect::Policy::limited(10))
 		.cookie_store(true)
 		.build()?;
@@ -80,7 +72,7 @@ async fn main() -> Result<()> {
 				DownloadType::Mod,
 				args.check,
 				args.download,
-				json_output,
+				cli.json,
 			)
 			.await?;
 		}
@@ -90,7 +82,7 @@ async fn main() -> Result<()> {
 				DownloadType::Plugin,
 				args.check,
 				args.download,
-				json_output,
+				cli.json,
 			)
 			.await?;
 		}
@@ -100,7 +92,7 @@ async fn main() -> Result<()> {
 				DownloadType::Mod,
 				args.check,
 				args.download,
-				json_output,
+				cli.json,
 			)
 			.instrument(info_span!("both", type = "mod"))
 			.await?;
@@ -110,7 +102,7 @@ async fn main() -> Result<()> {
 				DownloadType::Plugin,
 				args.check,
 				args.download,
-				json_output,
+				cli.json,
 			)
 			.instrument(info_span!("both", type = "plugin"))
 			.await?;
