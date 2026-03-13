@@ -1,5 +1,3 @@
-pub mod capsolver;
 pub mod cli;
-pub mod error;
+pub mod fylio;
 pub mod scrape;
-pub mod utils;

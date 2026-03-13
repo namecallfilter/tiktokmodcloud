@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
-use dotenvy::dotenv;
 use tiktokmodcloud::{cli, scrape::DownloadType};
 use tracing::{Instrument, info_span};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -40,8 +39,6 @@ struct ActionArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	dotenv().ok();
-
 	tracing_subscriber::registry()
 		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
 			EnvFilter::new(format!("{}={}", env!("CARGO_CRATE_NAME"), "trace"))
@@ -60,7 +57,7 @@ async fn main() -> Result<()> {
 	let cli = Cli::parse();
 
 	let client = Client::builder()
-		.emulation(Emulation::Chrome143)
+		.emulation(Emulation::Chrome145)
 		.redirect(redirect::Policy::limited(10))
 		.cookie_store(true)
 		.build()?;
@@ -94,9 +91,8 @@ async fn main() -> Result<()> {
 				args.download,
 				cli.json,
 			)
-			.instrument(info_span!("both", type = "mod"))
+			.instrument(info_span!("both", r#type = "mod"))
 			.await?;
-
 			cli::handle_action(
 				&client,
 				DownloadType::Plugin,
@@ -104,7 +100,7 @@ async fn main() -> Result<()> {
 				args.download,
 				cli.json,
 			)
-			.instrument(info_span!("both", type = "plugin"))
+			.instrument(info_span!("both", r#type = "plugin"))
 			.await?;
 		}
 	}

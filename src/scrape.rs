@@ -1,13 +1,12 @@
 use anyhow::{Context as _, Result};
-use rand::Rng;
-use regex::Regex;
+use rand::RngExt;
 use scraper::{Html, Selector};
 use tracing::{debug, warn};
 use wreq::Client;
 
-use crate::error::ScrapeError;
+use crate::fylio::{PageData, fetch_page_data};
 
-const MAX_DELAY_MS: u64 = 60_000;
+const MAX_RETRY_DELAY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DownloadType {
@@ -16,159 +15,101 @@ pub enum DownloadType {
 }
 
 impl DownloadType {
-	pub fn as_path(&self) -> &str {
+	fn as_path(self) -> &'static str {
 		match self {
-			DownloadType::Mod => "tik-tok-mod",
-			DownloadType::Plugin => "tik-tok-plugin",
+			Self::Mod => "tik-tok-mod",
+			Self::Plugin => "tik-tok-plugin",
 		}
 	}
 }
 
-async fn get_with_retry(
-	client: &Client, url: &str, referrer: &str, retries: u32,
-) -> Result<wreq::Response> {
-	let mut last_error = None;
-	let mut delay_ms = 5000;
-
-	for i in 0..retries {
-		match client.get(url).header("Referer", referrer).send().await {
-			Ok(response) => {
-				if !response.status().is_success() {
-					let status = response.status();
-					let reason = status.canonical_reason().unwrap_or("Unknown Status");
-
-					warn!(
-						attempt = i + 1,
-						status = status.as_u16(),
-						reason = reason,
-						retry_delay_ms = delay_ms,
-						"Attempt failed"
-					);
-
-					last_error = Some(
-						ScrapeError::GetWithRetry(
-							url.to_string(),
-							format!("Server responded with {}: {}", status.as_u16(), reason),
-						)
-						.into(),
-					);
-				} else {
-					return Ok(response);
-				}
-			}
-			Err(e) => {
-				warn!(
-					attempt = i + 1,
-					error = %e,
-					retry_delay_ms = delay_ms,
-					"Attempt failed with request error"
-				);
-
-				last_error = Some(ScrapeError::GetWithRetry(url.to_string(), e.to_string()).into());
-			}
-		}
-
-		if i + 1 < retries {
-			let jitter_ms = rand::rng().random_range(0..=1000);
-			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms + jitter_ms)).await;
-
-			delay_ms = (delay_ms.saturating_mul(2)).min(MAX_DELAY_MS);
-		}
-	}
-
-	Err(last_error.unwrap_or_else(|| {
-		ScrapeError::GetWithRetry(url.to_string(), "No attempts made".to_string()).into()
-	}))
+#[derive(Debug)]
+pub struct DownloadPage {
+	pub page_url: String,
+	pub page_data: PageData,
 }
 
-pub async fn get_download_links(
+pub async fn get_download_page(
 	client: &Client, download_type: DownloadType,
-) -> Result<(String, String)> {
+) -> Result<DownloadPage> {
 	let start_url = format!("https://apkw.ru/en/download/{}/", download_type.as_path());
+	debug!(url = %start_url, "Fetching initial page");
 
-	debug!(start_url = %start_url, "Fetching initial page");
-
-	let gate_page_text = get_with_retry(client, &start_url, &start_url, 5)
+	let html = get_with_retry(client, &start_url, &start_url, 5)
 		.await?
 		.text()
 		.await?;
 
-	let document = Html::parse_document(&gate_page_text);
-	let selector = Selector::parse("a").expect("Valid 'a' selector");
+	let document = Html::parse_document(&html);
+	let selector = Selector::parse("a").expect("valid selector");
 
 	let gate_url = document
 		.select(&selector)
 		.find(|el| {
-			el.text().collect::<String>().contains("UNIVERSAL")
-				|| el.text().collect::<String>().contains("Plugin")
+			let text = el.text().collect::<String>();
+			text.contains("UNIVERSAL") || text.contains("Plugin")
 		})
 		.and_then(|el| el.value().attr("href"))
-		.context("Failed to find mirror gate URL")?
+		.context("Failed to find download gate URL")?
 		.to_string();
 
-	debug!(gate_url = %gate_url, "Fetching gate page");
+	debug!(url = %gate_url, "Fetching gate page");
 
 	let gate_response = get_with_retry(client, &gate_url, &start_url, 5).await?;
-	let gate_url_after_redirect = gate_response.uri().to_string();
+	let redirected_url = gate_response.uri().to_string();
 
-	let mirror_url = if gate_url_after_redirect.contains("file-download") {
-		let lazy_redirect_page_text = gate_response.text().await?;
-		let lazy_doc = Html::parse_document(&lazy_redirect_page_text);
-		let lazy_selector =
-			Selector::parse("a[rel='noreferrer']").expect("Valid 'a[rel=noreferrer]' selector");
-
-		let lazy_redirect_url = lazy_doc
-			.select(&lazy_selector)
+	let page_url = if redirected_url.contains("file-download") {
+		let text = gate_response.text().await?;
+		let doc = Html::parse_document(&text);
+		let sel = Selector::parse("a[rel='noreferrer']").expect("valid selector");
+		doc.select(&sel)
 			.next()
 			.and_then(|el| el.value().attr("href"))
-			.context("Failed to find the lazy redirect URL")?;
-
-		debug!(lazy_redirect_url = %lazy_redirect_url, "Resolving final mirror URL");
-
-		let mirror_response = get_with_retry(client, lazy_redirect_url, &start_url, 5).await?;
-		mirror_response.uri().to_string()
+			.context("Failed to find lazy redirect URL")?
+			.to_string()
 	} else {
-		gate_url_after_redirect
+		redirected_url
 	};
 
-	debug!(mirror_url = %mirror_url, "Mirror URL");
+	debug!(url = %page_url, "Resolved Fylio page URL");
 
-	let countdown_page_text = get_with_retry(client, &mirror_url, &start_url, 5)
-		.await?
-		.text()
-		.await?;
+	let page_data = fetch_page_data(client, &page_url).await?;
+	Ok(DownloadPage {
+		page_url,
+		page_data,
+	})
+}
 
-	let intermediate_regex =
-		Regex::new(r#"href\s*=\s*["'](https://go\.linkify\.ru/get/[^"']+)["']"#)?;
+async fn get_with_retry(
+	client: &Client, url: &str, referer: &str, retries: u32,
+) -> Result<wreq::Response> {
+	let mut last_error = None;
+	let mut delay_ms = 5_000u64;
 
-	let intermediate_url = intermediate_regex
-		.captures(&countdown_page_text)
-		.and_then(|cap| cap.get(1))
-		.map(|m| m.as_str().to_string())
-		.context("Failed to find the intermediate linkify 'get' URL in the countdown script")?;
+	for attempt in 0..retries {
+		match client.get(url).header("Referer", referer).send().await {
+			Ok(resp) if resp.status().is_success() => return Ok(resp),
+			Ok(resp) => {
+				let status = resp.status();
+				let reason = status.canonical_reason().unwrap_or("unknown");
+				warn!(attempt = attempt + 1, status = %status, reason, "Request failed");
+				last_error = Some(anyhow::anyhow!(
+					"Request to {url} failed: {status} {reason}"
+				));
+			}
+			Err(e) => {
+				warn!(attempt = attempt + 1, error = %e, "Request error");
+				last_error = Some(anyhow::anyhow!("Request to {url} failed: {e}"));
+			}
+		}
 
-	debug!(intermediate_url = %intermediate_url, "Fetching intermediate redirect page");
+		if attempt + 1 < retries {
+			let jitter = rand::rng().random_range(0..=1000u64);
+			tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms + jitter)).await;
+			delay_ms = delay_ms.saturating_mul(2).min(MAX_RETRY_DELAY_MS);
+		}
+	}
 
-	let final_redirect_page_text = get_with_retry(client, &intermediate_url, &mirror_url, 5)
-		.await?
-		.text()
-		.await?;
-
-	let modsfire_regex =
-		Regex::new(r#"window\.location\.replace\(\s*['"](https://modsfire\.com/[^'"]+)['"]\s*\)"#)?;
-
-	let modsfire_url = modsfire_regex
-		.captures(&final_redirect_page_text)
-		.and_then(|cap| cap.get(1))
-		.map(|m| m.as_str().to_string())
-		.context("Failed to extract final modsfire URL from intermediate page")?;
-
-	debug!(modsfire_url = %modsfire_url, "Modsfire URL");
-
-	let direct_download_link = {
-		let re = Regex::new(r"/([^/]*)$")?;
-		re.replace(&modsfire_url, "/d/$1").to_string()
-	};
-
-	Ok((direct_download_link, modsfire_url))
+	Err(last_error
+		.unwrap_or_else(|| anyhow::anyhow!("Request to {url} failed after {retries} attempts")))
 }
