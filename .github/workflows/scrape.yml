@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download Rust binary
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           workflow: build-binary.yml
           name: tiktokmodcloud-binary
