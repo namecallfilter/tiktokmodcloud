@@ -1,34 +1,30 @@
-name: Build and Cache Rust Binary
+name: CI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-  workflow_dispatch:
+    push:
+        branches:
+            - main
+        paths:
+            - "src/**"
+            - "package.json"
+            - "bun.lock"
+    pull_request:
+        paths:
+            - "src/**"
+            - "package.json"
+            - "bun.lock"
+    workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
 
-      - name: Build release binary
-        run: cargo build --release
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: tiktokmodcloud-binary
-          path: target/release/tiktokmodcloud
-          retention-days: 90
+            - name: Lint and format check
+              run: bun run check

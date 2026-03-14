@@ -1,98 +1,89 @@
 name: Download and Release TikTok Mod & Plugin
 
 on:
-  schedule:
-    - cron: "0 */1 * * *"
-  workflow_dispatch:
+    schedule:
+        - cron: "0 */1 * * *"
+    workflow_dispatch:
 
 permissions:
-  contents: write
+    contents: write
 
 jobs:
-  download-and-release:
-    runs-on: ubuntu-latest
+    download-and-release:
+        runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        type: [mod, plugin]
-      fail-fast: false
+        strategy:
+            matrix:
+                type: [mod, plugin]
+            fail-fast: false
 
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
-      APP_ID: ${{ secrets.APP_ID }}
-      API_HASH: ${{ secrets.API_HASH }}
-      SESSION: ${{ secrets.SESSION }}
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
 
-      - name: Download Rust binary
-        uses: dawidd6/action-download-artifact@v17
-        with:
-          workflow: build-binary.yml
-          name: tiktokmodcloud-binary
-          path: ./bin
+            - uses: oven-sh/setup-bun@v2
 
-      - name: Make binary executable
-        run: chmod +x ./bin/tiktokmodcloud
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
 
-      - name: Get Latest Info from Source
-        id: get_info
-        run: |
-          set -e
+            - name: Get Latest Info from Source
+              id: get_info
+              run: |
+                  set -e
 
-          JSON_INFO=$(./bin/tiktokmodcloud ${{ matrix.type }} -c --json)
+                  JSON_INFO=$(bun run src/index.ts ${{ matrix.type }} --check --json)
 
-          if [ -z "${JSON_INFO}" ]; then
-            echo "Failed to retrieve json info."
-            exit 1
-          fi
+                  if [ -z "${JSON_INFO}" ]; then
+                    echo "Failed to retrieve json info."
+                    exit 1
+                  fi
 
-          echo "Discovered info: ${JSON_INFO}"
+                  echo "Discovered info: ${JSON_INFO}"
 
-          echo "VERSION=$(jq -r .version <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
-          echo "SUFFIX=$(jq -r 'if .suffix then "-" + .suffix else "" end' <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+                  echo "VERSION=$(jq -r .version <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+                  echo "SUFFIX=$(jq -r 'if .suffix then "-" + .suffix else "" end' <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
 
-      - name: Check if Release Already Exists
-        id: check_release
-        run: |
-          TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}"
-          echo "Checking for existing release with tag: ${TAG_NAME}"
+            - name: Check if Release Already Exists
+              id: check_release
+              run: |
+                  TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}"
+                  echo "Checking for existing release with tag: ${TAG_NAME}"
 
-          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            echo "Release for ${TAG_NAME} already exists. Halting execution for this job."
-            echo "continue=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "No existing release found. Proceeding to download."
-            echo "continue=true" >> "$GITHUB_OUTPUT"
-          fi
+                  if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+                    echo "Release for ${TAG_NAME} already exists. Halting execution for this job."
+                    echo "continue=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "No existing release found. Proceeding to download."
+                    echo "continue=true" >> "$GITHUB_OUTPUT"
+                  fi
 
-      - name: Download Artifact
-        id: download_artifact
-        if: steps.check_release.outputs.continue == 'true'
-        run: |
-          ./bin/tiktokmodcloud ${{ matrix.type }} -d
+            - name: Download Artifact
+              id: download_artifact
+              if: steps.check_release.outputs.continue == 'true'
+              run: |
+                  bun run src/index.ts ${{ matrix.type }} --download
 
-          FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
+                  FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
 
-          if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
-            echo "Script did not download the artifact."
-            exit 1
-          fi
+                  if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
+                    echo "Script did not download the artifact."
+                    exit 1
+                  fi
 
-          echo "Artifact downloaded to: ${FILE_PATH}"
-          echo "FILE_PATH=${FILE_PATH}" >> "$GITHUB_OUTPUT"
+                  echo "Artifact downloaded to: ${FILE_PATH}"
+                  echo "FILE_PATH=${FILE_PATH}" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release
-        if: steps.download_artifact.outputs.FILE_PATH
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}
-          name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
-          files: ${{ steps.download_artifact.outputs.FILE_PATH }}
-          body: |
-            Automated release for ${{ matrix.type }}
+            - name: Create Release
+              if: steps.download_artifact.outputs.FILE_PATH
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}
+                  name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
+                  files: ${{ steps.download_artifact.outputs.FILE_PATH }}
+                  body: |
+                      Automated release for ${{ matrix.type }}
 
-            Version ${{ steps.get_info.outputs.VERSION }}
+                      Version ${{ steps.get_info.outputs.VERSION }}

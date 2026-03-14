@@ -1,51 +1,50 @@
 # TikTok Mod Cloud CLI
 
-A Rust-based CLI tool to check and download the latest TikTok mods and plugins from TikTokModCloud.
-
-## Features
-
-- **Check for updates**: Quickly check the latest version available.
-- **Automated Downloads**: Scrapes download links and handles CAPTCHAs automatically.
-- **Progress Tracking**: Real-time progress bar for downloads.
-- **JSON Output**: Optional JSON format for integration with other tools.
+A TypeScript/Bun CLI tool to check and download the latest TikTok mods and plugins from TikTokModCloud.
 
 ## Prerequisites
 
-- **Rust**: Ensure you have the latest stable Rust toolchain installed.
-- **CapSolver API Key**: This tool uses [CapSolver](https://www.capsolver.com/) to solve Turnstile CAPTCHAs. You need an active API key.
+- [Bun](https://bun.sh/) runtime installed
 
-## Configuration
+## Setup
 
-Create a `.env` file in the root directory and add your CapSolver API key:
-
-```env
-CAPSOLVER_KEY=your_capsolver_api_key_here
+```bash
+bun install
 ```
 
 ## Usage
 
 ### Commands
 
-- `mod`: Handle TikTok Mod.
-- `plugin`: Handle TikTok Plugin.
-- `both`: Handle both Mod and Plugin sequentially.
+- `mod` - Handle TikTok Mod
+- `plugin` - Handle TikTok Plugin
+- `both` - Handle both Mod and Plugin sequentially
 
 ### Flags
 
-- `-c, --check`: Check for the latest version.
-- `-d, --download`: Download the latest version.
-- `--json`: Output information as JSON.
+- `-c, --check` - Check for the latest version
+- `-d, --download` - Download the latest version
+- `--json` - Output information as JSON
+- `-h, --help` - Show help message
 
 ### Examples
 
 Check for the latest TikTok Mod:
+
 ```bash
-cargo run -- mod --check
+bun run src/index.ts mod --check
 ```
 
 Download both Mod and Plugin:
+
 ```bash
-cargo run -- both --download
+bun run src/index.ts both --download
+```
+
+Check version as JSON:
+
+```bash
+bun run src/index.ts mod -c --json
 ```
 
 ## Legal and Ethical Disclaimer

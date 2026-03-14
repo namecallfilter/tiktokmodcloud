@@ -1,50 +1,41 @@
 name: Test Download Both Mod & Plugin
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
-  workflow_dispatch:
+    schedule:
+        - cron: "0 0 * * *"
+    workflow_dispatch:
 
 permissions:
-  contents: write
+    contents: write
 
 jobs:
-  test-download-both:
-    runs-on: ubuntu-latest
+    test-download-both:
+        runs-on: ubuntu-latest
 
-    env:
-      CAPSOLVER_KEY: ${{ secrets.CAPSOLVER_KEY }}
-      APP_ID: ${{ secrets.APP_ID }}
-      API_HASH: ${{ secrets.API_HASH }}
-      SESSION: ${{ secrets.SESSION }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
 
-      - name: Download Rust binary
-        uses: dawidd6/action-download-artifact@v17
-        with:
-          workflow: build-binary.yml
-          name: tiktokmodcloud-binary
-          path: ./bin
+            - uses: oven-sh/setup-bun@v2
 
-      - name: Make Binary Executable
-        run: chmod +x ./bin/tiktokmodcloud
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
 
-      - name: Test Download Both
-        run: |
-          ./bin/tiktokmodcloud both -d
+            - name: Test Download Both
+              run: |
+                  bun run src/index.ts both --download
 
-          MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
-          if [ -z "${MOD_FILE_PATH}" ]; then
-            echo "No MOD APK file found."
-            exit 1
-          fi
+                  MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
+                  if [ -z "${MOD_FILE_PATH}" ]; then
+                    echo "No MOD APK file found."
+                    exit 1
+                  fi
 
-          PLUGIN_FILE_PATH=$(find ./apks -name "*_plugin*.apk" | head -n 1)
-          if [ -z "${PLUGIN_FILE_PATH}" ]; then
-            echo "No Plugin APK file found."
-            exit 1
-          fi
+                  PLUGIN_FILE_PATH=$(find ./apks -name "*_plugin*.apk" | head -n 1)
+                  if [ -z "${PLUGIN_FILE_PATH}" ]; then
+                    echo "No Plugin APK file found."
+                    exit 1
+                  fi
