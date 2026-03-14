@@ -11,12 +11,14 @@
 	"dependencies": {
 		"@lazarv/rsc": "^0.0.0-experimental-baf0ab7-20260308-65add5d1",
 		"clerc": "^1.3.1",
+		"cli-progress": "^3.12.0",
 		"htmlparser2": "^10.1.0",
 		"pino": "^10.3.1",
 		"wreq-js": "^2.1.1"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",
+		"@types/cli-progress": "^3.11.6",
 		"@types/update-notifier": "^6.0.8",
 		"oxfmt": "^0.40.0",
 		"oxlint": "^1.55.0",
