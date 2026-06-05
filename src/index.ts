@@ -8,12 +8,12 @@ import { logger } from "./logger.ts";
 const actionFlags = {
 	check: {
 		type: Boolean,
-		alias: "c",
+		short: "c",
 		description: "Check for the latest version",
 	},
 	download: {
 		type: Boolean,
-		alias: "d",
+		short: "d",
 		description: "Download the latest version",
 	},
 	json: {
