@@ -32,19 +32,19 @@ bun install
 Check for the latest TikTok Mod:
 
 ```bash
-bun run src/index.ts mod --check
+bun run cli mod --check
 ```
 
 Download both Mod and Plugin:
 
 ```bash
-bun run src/index.ts both --download
+bun run cli both --download
 ```
 
 Check version as JSON:
 
 ```bash
-bun run src/index.ts mod -c --json
+bun run cli mod -c --json
 ```
 
 ## Legal and Ethical Disclaimer

@@ -4,6 +4,7 @@
 	"type": "module",
 	"module": "src/index.ts",
 	"scripts": {
+		"cli": "bun run src/index.ts",
 		"lint": "oxlint . --deny-warnings",
 		"format": "oxfmt . --write",
 		"check": "oxlint . && oxfmt . --check"
