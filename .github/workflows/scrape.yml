@@ -34,7 +34,7 @@ jobs:
               run: |
                   set -e
 
-                  JSON_INFO=$(bun run src/index.ts ${{ matrix.type }} --check --json)
+                  JSON_INFO=$(bun run cli -- ${{ matrix.type }} --check --json)
 
                   if [ -z "${JSON_INFO}" ]; then
                     echo "Failed to retrieve json info."
@@ -64,7 +64,7 @@ jobs:
               id: download_artifact
               if: steps.check_release.outputs.continue == 'true'
               run: |
-                  bun run src/index.ts ${{ matrix.type }} --download
+                  bun run cli -- ${{ matrix.type }} --download
 
                   FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
 

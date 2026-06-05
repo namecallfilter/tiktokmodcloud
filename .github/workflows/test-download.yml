@@ -26,7 +26,7 @@ jobs:
 
             - name: Test Download Both
               run: |
-                  bun run src/index.ts both --download
+                  bun run cli -- both --download
 
                   MOD_FILE_PATH=$(find ./apks -name "*_universal*.apk" | head -n 1)
                   if [ -z "${MOD_FILE_PATH}" ]; then
