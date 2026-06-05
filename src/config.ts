@@ -1,4 +1,4 @@
-export const BROWSER = { browser: "chrome_145", os: "windows" } as const;
+export const BROWSER = { browser: "chrome_147", os: "windows" } as const;
 
 export const APKW_BASE_URL = "https://apkw.ru/en/download";
 
