@@ -6,23 +6,23 @@ import { logger as rootLogger } from "../logger.ts";
 
 const logger = rootLogger.child({ module: "scrape:fylio" });
 
-function findProp<T>(obj: unknown, key: string, visited = new WeakSet<object>()): T | undefined {
+function findProp(obj: unknown, key: string, visited = new WeakSet<object>()): unknown {
 	if (obj === null || typeof obj !== "object") return undefined;
 	if (visited.has(obj)) return undefined;
 	visited.add(obj);
 
-	if (key in obj) return (obj as Record<string, unknown>)[key] as T;
+	if (Object.hasOwn(obj, key)) return (obj as Record<string, unknown>)[key];
 
 	for (const value of Object.values(obj)) {
-		const found = findProp<T>(value, key, visited);
+		const found = findProp(value, key, visited);
 		if (found !== undefined) return found;
 	}
 	return undefined;
 }
 
-const NEXT_F_PUSH_RE = /^self\.__next_f\.push\((.+)\)$/s;
+const NEXT_F_PUSH_RE = /^\s*self\.__next_f\.push\(\s*(\[.*\])\s*\)\s*;?\s*$/s;
 
-function extractRscPayload(html: string): string {
+export function extractRscPayload(html: string): string {
 	const chunks: string[] = [];
 	let isScript = false;
 	let scriptContent = "";
@@ -40,8 +40,8 @@ function extractRscPayload(html: string): string {
 				const match = NEXT_F_PUSH_RE.exec(scriptContent);
 				if (match) {
 					try {
-						const [type, data] = JSON.parse(match[1]!) as [number, string?];
-						if (type === 1 && data) chunks.push(data);
+						const [type, data] = JSON.parse(match[1]!) as unknown[];
+						if (type === 1 && typeof data === "string" && data) chunks.push(data);
 					} catch (e) {
 						logger.debug(
 							{ err: e, snippet: scriptContent.slice(0, 100) },
@@ -62,47 +62,66 @@ function extractRscPayload(html: string): string {
 }
 
 async function deserializeRsc(html: string): Promise<unknown> {
-	const payload = extractRscPayload(html);
-	const stream = new ReadableStream<Uint8Array>({
-		start(controller) {
-			controller.enqueue(new TextEncoder().encode(payload));
-			controller.close();
-		},
-	});
-
-	return createFromReadableStream(stream);
+	return createFromReadableStream(new Response(extractRscPayload(html)).body!);
 }
 
 async function fetchHtml(url: string): Promise<string> {
 	const session = await getSharedSession();
 	const res = await session.fetch(url);
-	if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+	if (!res.ok) {
+		await res.body?.cancel();
+		throw new Error(`HTTP ${res.status} fetching ${url}`);
+	}
 	return res.text();
 }
 
 const FYLIO_BASE_URL = "https://fylio.com";
 
+export function parseFylioDownloadInfo(tree: unknown): DownloadInfo {
+	const links = findProp(tree, "links");
+	const fileName = findProp(tree, "fileName");
+	const fileSize = findProp(tree, "fileSize");
+	const fileMime = findProp(tree, "fileMime");
+
+	if (!Array.isArray(links) || !links.length) throw new Error("No download links found in the RSC payload");
+	if (
+		!links.every((link): link is string => {
+			if (typeof link !== "string") return false;
+			try {
+				const url = new URL(link);
+				return url.protocol === "https:" || url.protocol === "http:";
+			} catch {
+				return false;
+			}
+		})
+	) {
+		throw new Error("Invalid download links in the RSC payload");
+	}
+	if (
+		typeof fileName !== "string" ||
+		!fileName.trim() ||
+		typeof fileSize !== "number" ||
+		!Number.isSafeInteger(fileSize) ||
+		fileSize < 0 ||
+		typeof fileMime !== "string" ||
+		!fileMime.trim()
+	) {
+		throw new Error("Missing or invalid file metadata in the RSC payload");
+	}
+
+	return { fileName, fileSize, fileMime, links };
+}
+
 export async function resolveFylioDownload(url: string): Promise<DownloadInfo> {
 	const initHtml = await fetchHtml(url);
 	const initTree = await deserializeRsc(initHtml);
 
-	const clickId = findProp<string>(initTree, "clickId");
-	if (!clickId) {
+	const clickId = findProp(initTree, "clickId");
+	if (typeof clickId !== "string" || !clickId) {
 		throw new Error(`Failed to extract clickId for: ${url}`);
 	}
 
-	const getHtml = await fetchHtml(`${FYLIO_BASE_URL}/get/${clickId}`);
+	const getHtml = await fetchHtml(`${FYLIO_BASE_URL}/get/${encodeURIComponent(clickId)}`);
 	const getTree = await deserializeRsc(getHtml);
-
-	const links = findProp<string[]>(getTree, "links");
-	const fileName = findProp<string>(getTree, "fileName");
-	const fileSize = findProp<number>(getTree, "fileSize");
-	const fileMime = findProp<string>(getTree, "fileMime");
-
-	if (!links?.length) throw new Error("No download links found in the RSC payload");
-	if (!fileName || fileSize === undefined || !fileMime) {
-		throw new Error("Missing file metadata in the RSC payload");
-	}
-
-	return { fileName, fileSize, fileMime, links };
+	return parseFylioDownloadInfo(getTree);
 }

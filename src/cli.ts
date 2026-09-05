@@ -18,13 +18,11 @@ interface ParsedVersion {
 	readonly suffix: string | null;
 }
 
-function parseVersion(fileName: string): ParsedVersion {
-	const version = fileName.split("_")[0] ?? fileName;
-	const lastPart = fileName
-		.split("_")
-		.pop()
-		?.replace(/\.apk$/i, "");
-	const suffix = lastPart && lastPart !== "plugin" && lastPart !== "universal" ? lastPart : null;
+export function parseVersion(fileName: string): ParsedVersion {
+	const parts = fileName.replace(/\.apk$/i, "").split("_");
+	const version = parts[0]!;
+	const lastPart = parts.length > 1 ? parts.at(-1) : undefined;
+	const suffix = lastPart && !["plugin", "universal"].includes(lastPart.toLowerCase()) ? lastPart : null;
 	return { version, suffix };
 }
 
@@ -62,6 +60,16 @@ export async function handleAction(
 	if (download) {
 		if (!info.links.length) throw new Error("No download links available");
 		logger.info({ fileName: info.fileName }, "starting download");
-		await downloadFile(info.links[0]!, pageUrl, info.fileName);
+		const errors: unknown[] = [];
+		for (const url of info.links) {
+			try {
+				await downloadFile(url, pageUrl, info.fileName, { expectedSize: info.fileSize });
+				return;
+			} catch (error) {
+				errors.push(error);
+				logger.warn({ err: error, mirror: errors.length }, "download mirror failed");
+			}
+		}
+		throw new AggregateError(errors, `All ${info.links.length} download mirrors failed for ${info.fileName}`);
 	}
 }

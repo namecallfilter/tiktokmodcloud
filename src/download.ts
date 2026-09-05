@@ -1,6 +1,9 @@
 import { SingleBar, Presets } from "cli-progress";
-import { mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { getSharedSession } from "./http.ts";
 import { OUTPUT_DIR } from "./config.ts";
 import { formatBytes } from "./format.ts";
@@ -10,19 +13,49 @@ const logger = rootLogger.child({ module: "download" });
 
 const isTTY = process.stderr.isTTY === true;
 
-export async function downloadFile(url: string, referer: string, fileName: string): Promise<string> {
-	const session = await getSharedSession();
-	const res = await session.fetch(url, { headers: { Referer: referer } });
+export async function downloadFile(
+	url: string,
+	referer: string,
+	fileName: string,
+	{ outputDirectory = OUTPUT_DIR, expectedSize }: { outputDirectory?: string; expectedSize?: number } = {},
+): Promise<string> {
+	if (
+		!fileName.trim() ||
+		fileName === "." ||
+		fileName === ".." ||
+		/[\\/:]/.test(fileName) ||
+		[...fileName].some((character) => character.charCodeAt(0) < 32)
+	) {
+		throw new Error(`Unsafe download filename: ${JSON.stringify(fileName)}`);
+	}
+	if (expectedSize !== undefined && (!Number.isSafeInteger(expectedSize) || expectedSize <= 0)) {
+		throw new Error("Expected download size must be a positive integer");
+	}
 
-	if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+	const session = await getSharedSession();
+	const res = await session.fetch(url, { headers: { Referer: referer, "Accept-Encoding": "identity" } });
+
+	if (!res.ok) {
+		await res.body?.cancel();
+		throw new Error(`Download failed: ${res.status}`);
+	}
 
 	const body = res.body;
 	if (!body) throw new Error("Response body is empty");
 
-	const totalBytes = Number(res.headers.get("content-length")) || 0;
+	if (res.headers.get("content-type")?.toLowerCase().includes("text/html")) {
+		await body.cancel();
+		throw new Error("Download returned an HTML page instead of a file");
+	}
 
-	await mkdir(OUTPUT_DIR, { recursive: true });
-	const filePath = join(OUTPUT_DIR, fileName);
+	// Encoded content lengths describe the compressed transfer, not the decoded body.
+	const encoding = res.headers.get("content-encoding");
+	const contentLength = encoding && encoding !== "identity" ? null : res.headers.get("content-length");
+	const parsedLength = contentLength === null ? NaN : Number(contentLength);
+	const totalBytes = Number.isSafeInteger(parsedLength) && parsedLength >= 0 ? parsedLength : undefined;
+	const progressTotal = expectedSize ?? totalBytes;
+	const filePath = join(outputDirectory, fileName);
+	const temporaryPath = join(outputDirectory, `.${fileName}.${randomUUID()}.part`);
 
 	logger.info({ fileName, totalBytes: totalBytes || "unknown" }, "downloading");
 
@@ -34,52 +67,67 @@ export async function downloadFile(url: string, referer: string, fileName: strin
 			noTTYOutput: !isTTY,
 			notTTYSchedule: 10_000,
 			format: isTTY
-				? "  {bar} {percentage}% | {received}/{total} | {speed}/s"
-				: "  {received}/{total} ({percentage}%) {speed}/s",
-			formatValue: (value, _options, type) => {
-				switch (type) {
-					case "percentage":
-						return String(value);
-					default:
-						return String(value);
-				}
-			},
+				? "  {bar} {percentage}% | {received}/{totalSize} | {speed}/s"
+				: "  {received}/{totalSize} ({percentage}%) {speed}/s",
 		},
 		Presets.shades_classic,
 	);
 
-	bar.start(totalBytes || 1, 0, {
+	bar.start(progressTotal || 1, 0, {
 		received: formatBytes(0),
-		total: totalBytes ? formatBytes(totalBytes) : "???",
+		totalSize: progressTotal ? formatBytes(progressTotal) : "???",
 		speed: "0 B",
 	});
 
 	const startTime = performance.now();
 	let downloaded = 0;
-	const chunks: Uint8Array[] = [];
+	try {
+		await mkdir(outputDirectory, { recursive: true });
+		await pipeline(
+			async function* () {
+				for await (const chunk of body) {
+					downloaded += chunk.length;
+					if (totalBytes !== undefined && downloaded > totalBytes) {
+						throw new Error(`Download exceeded its expected size of ${totalBytes} bytes`);
+					}
+					if (expectedSize !== undefined && downloaded > expectedSize) {
+						throw new Error(`Download exceeded the source file size of ${expectedSize} bytes`);
+					}
 
-	for await (const chunk of body) {
-		chunks.push(chunk);
-		downloaded += chunk.length;
+					const elapsed = (performance.now() - startTime) / 1000;
+					bar.update(progressTotal ? downloaded : 1, {
+						received: formatBytes(downloaded),
+						totalSize: progressTotal ? formatBytes(progressTotal) : "???",
+						speed: formatBytes(elapsed > 0 ? downloaded / elapsed : 0),
+					});
+					yield chunk;
+				}
+			},
+			createWriteStream(temporaryPath, { flags: "wx" }),
+		);
 
-		const elapsed = (performance.now() - startTime) / 1000;
-		const speed = elapsed > 0 ? downloaded / elapsed : 0;
+		if (downloaded === 0) throw new Error("Downloaded file is empty");
+		if (totalBytes !== undefined && downloaded !== totalBytes) {
+			throw new Error(`Incomplete download: expected ${totalBytes} bytes, received ${downloaded}`);
+		}
+		if (expectedSize !== undefined && downloaded !== expectedSize) {
+			throw new Error(
+				`Download size does not match source metadata: expected ${expectedSize} bytes, received ${downloaded}`,
+			);
+		}
 
-		bar.update(totalBytes ? downloaded : 1, {
-			received: formatBytes(downloaded),
-			total: totalBytes ? formatBytes(totalBytes) : "???",
-			speed: formatBytes(speed),
-		});
+		await rename(temporaryPath, filePath);
+	} finally {
+		bar.stop();
+		await body.cancel().catch(() => {});
+		await rm(temporaryPath, { force: true });
 	}
-
-	bar.stop();
 
 	if (!isTTY) {
 		const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
 		logger.info({ fileName, size: formatBytes(downloaded), elapsed: `${elapsed}s` }, "download finished");
 	}
 
-	await Bun.write(filePath, new Blob(chunks));
 	logger.info({ filePath, downloaded }, "download complete");
 
 	return filePath;

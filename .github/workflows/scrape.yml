@@ -8,23 +8,29 @@ on:
 permissions:
     contents: write
 
+concurrency:
+    group: download-and-release
+    cancel-in-progress: false
+
 jobs:
     download-and-release:
         runs-on: ubuntu-latest
+        timeout-minutes: 30
 
         strategy:
             matrix:
                 type: [mod, plugin]
             fail-fast: false
 
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
 
             - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: .bun-version
 
             - name: Install dependencies
               run: bun install --frozen-lockfile
@@ -32,30 +38,41 @@ jobs:
             - name: Get Latest Info from Source
               id: get_info
               run: |
-                  set -e
-
                   JSON_INFO=$(bun run cli -- ${{ matrix.type }} --check --json)
 
-                  if [ -z "${JSON_INFO}" ]; then
-                    echo "Failed to retrieve json info."
-                    exit 1
-                  fi
+                  # Validate remote metadata before using it in tags, paths, or outputs.
+                  jq -e '
+                    (.version | type == "string" and test("^[0-9]+([.][0-9]+)*$")) and
+                    (.suffix == null or (.suffix | type == "string" and test("^[A-Za-z0-9._-]+$"))) and
+                    (.fileName | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*[.]apk$"))
+                  ' <<< "$JSON_INFO" > /dev/null
 
-                  echo "Discovered info: ${JSON_INFO}"
+                  VERSION=$(jq -r .version <<< "$JSON_INFO")
+                  SUFFIX=$(jq -r 'if .suffix then "-" + .suffix else "" end' <<< "$JSON_INFO")
+                  FILE_NAME=$(jq -r .fileName <<< "$JSON_INFO")
 
-                  echo "VERSION=$(jq -r .version <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
-                  echo "SUFFIX=$(jq -r 'if .suffix then "-" + .suffix else "" end' <<< "${JSON_INFO}")" >> "$GITHUB_OUTPUT"
+                  echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+                  echo "TAG_NAME=v${VERSION}-${{ matrix.type }}${SUFFIX}" >> "$GITHUB_OUTPUT"
+                  echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
             - name: Check if Release Already Exists
               id: check_release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG_NAME: ${{ steps.get_info.outputs.TAG_NAME }}
               run: |
-                  TAG_NAME="v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}"
                   echo "Checking for existing release with tag: ${TAG_NAME}"
 
-                  if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+                  if RESPONSE=$(gh api --include "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}"); then
                     echo "Release for ${TAG_NAME} already exists. Halting execution for this job."
                     echo "continue=false" >> "$GITHUB_OUTPUT"
                   else
+                    # Authentication, rate limits, and server errors must not look like a missing release.
+                    STATUS=$(awk 'NR == 1 {print $2}' <<< "$RESPONSE")
+                    if [ "$STATUS" != "404" ]; then
+                      echo "Failed to check the existing release (HTTP ${STATUS:-unknown})."
+                      exit 1
+                    fi
                     echo "No existing release found. Proceeding to download."
                     echo "continue=true" >> "$GITHUB_OUTPUT"
                   fi
@@ -63,13 +80,14 @@ jobs:
             - name: Download Artifact
               id: download_artifact
               if: steps.check_release.outputs.continue == 'true'
+              env:
+                  FILE_NAME: ${{ steps.get_info.outputs.FILE_NAME }}
               run: |
                   bun run cli -- ${{ matrix.type }} --download
 
-                  FILE_PATH=$(find ./apks -name "*.apk" | head -n 1)
-
-                  if [ -z "${FILE_PATH}" ] || [ ! -f "${FILE_PATH}" ]; then
-                    echo "Script did not download the artifact."
+                  FILE_PATH="./apks/${FILE_NAME}"
+                  if [ ! -s "$FILE_PATH" ]; then
+                    echo "Script did not download the expected artifact: $FILE_PATH"
                     exit 1
                   fi
 
@@ -78,11 +96,13 @@ jobs:
 
             - name: Create Release
               if: steps.download_artifact.outputs.FILE_PATH
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               with:
-                  tag_name: v${{ steps.get_info.outputs.VERSION }}-${{ matrix.type }}${{ steps.get_info.outputs.SUFFIX }}
+                  tag_name: ${{ steps.get_info.outputs.TAG_NAME }}
+                  target_commitish: ${{ github.sha }}
                   name: TikTok ${{ matrix.type == 'mod' && 'Mod' || 'Plugin' }} v${{ steps.get_info.outputs.VERSION }}
                   files: ${{ steps.download_artifact.outputs.FILE_PATH }}
+                  fail_on_unmatched_files: true
                   body: |
                       Automated release for ${{ matrix.type }}
 
