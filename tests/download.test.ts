@@ -18,8 +18,8 @@ afterEach(async () => {
 	await rm(directory, { recursive: true, force: true });
 });
 
-function mockResponse(response: Response) {
-	const fetch = mock(async () => response as unknown as WreqResponse);
+function mockResponse(response: Response | (() => Response)) {
+	const fetch = mock(async () => (typeof response === "function" ? response() : response) as unknown as WreqResponse);
 	spyOn(http, "getSharedSession").mockResolvedValue({ fetch } as unknown as Session);
 	return fetch;
 }
@@ -44,36 +44,75 @@ describe("downloadFile", () => {
 
 	test("cleans up truncated responses and preserves an existing download", async () => {
 		await writeFile(join(directory, "mod.apk"), "previous complete download");
-		mockResponse(chunkedResponse(["short"], { "content-length": "100" }));
+		const fetch = mockResponse(chunkedResponse(["short"], { "content-length": "100" }));
 
 		await expect(
 			downloadFile("https://example.com/file", "https://example.com", "mod.apk", { outputDirectory: directory }),
 		).rejects.toThrow("Incomplete download");
+		expect(fetch).toHaveBeenCalledTimes(1);
 		expect(await readFile(join(directory, "mod.apk"), "utf8")).toBe("previous complete download");
 		expect(await readdir(directory)).toEqual(["mod.apk"]);
 	});
 
-	test("removes the temporary file when the response stream fails", async () => {
+	test("stops after three interrupted transfers and removes the temporary files", async () => {
 		function* interrupted() {
 			yield new TextEncoder().encode("partial");
 			throw new Error("connection interrupted");
 		}
-		mockResponse(new Response(ReadableStream.from(interrupted())));
+		const fetch = mockResponse(() => new Response(ReadableStream.from(interrupted())));
+		const sleep = spyOn(Bun, "sleep").mockResolvedValue(undefined);
 
 		await expect(
 			downloadFile("https://example.com/file", "https://example.com", "mod.apk", { outputDirectory: directory }),
-		).rejects.toThrow("connection interrupted");
+		).rejects.toThrow("Download stream interrupted");
+		expect(fetch).toHaveBeenCalledTimes(3);
+		expect(sleep.mock.calls).toEqual([[1_000], [2_000]]);
+		expect(await readdir(directory)).toEqual([]);
+	});
+
+	test("restarts an interrupted transfer and publishes only the complete retry", async () => {
+		function* interrupted() {
+			yield new TextEncoder().encode("partial");
+			throw new Error("stream error received: unexpected internal error encountered");
+		}
+		await writeFile(join(directory, "mod.apk"), "previous");
+		const fetch = mockResponse(chunkedResponse(["complete"], { "content-length": "8" }));
+		fetch.mockResolvedValueOnce(new Response(ReadableStream.from(interrupted())) as unknown as WreqResponse);
+		const sleep = spyOn(Bun, "sleep").mockImplementation(async () => {
+			expect(await readdir(directory)).toEqual(["mod.apk"]);
+			expect(await readFile(join(directory, "mod.apk"), "utf8")).toBe("previous");
+		});
+
+		const path = await downloadFile("https://example.com/file", "https://example.com", "mod.apk", {
+			outputDirectory: directory,
+			expectedSize: 8,
+		});
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(await readFile(path, "utf8")).toBe("complete");
+		expect(await readdir(directory)).toEqual(["mod.apk"]);
+	});
+
+	test.each([403, 416])("does not retry permanent HTTP %i failures", async (status) => {
+		const fetch = mockResponse(new Response("Unavailable", { status }));
+		const sleep = spyOn(Bun, "sleep").mockResolvedValue(undefined);
+		await expect(
+			downloadFile("https://example.com/file", "https://example.com", "mod.apk", { outputDirectory: directory }),
+		).rejects.toThrow(`Download failed: ${status}`);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
 		expect(await readdir(directory)).toEqual([]);
 	});
 
 	test("rejects a response smaller than the source metadata even when Content-Length matches", async () => {
-		mockResponse(chunkedResponse(["wrong file"], { "content-length": "10" }));
+		const fetch = mockResponse(chunkedResponse(["wrong file"], { "content-length": "10" }));
 		await expect(
 			downloadFile("https://example.com/file", "https://example.com", "mod.apk", {
 				outputDirectory: directory,
 				expectedSize: 100,
 			}),
 		).rejects.toThrow("does not match source metadata");
+		expect(fetch).toHaveBeenCalledTimes(1);
 		expect(await readdir(directory)).toEqual([]);
 	});
 

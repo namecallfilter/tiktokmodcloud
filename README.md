@@ -64,6 +64,8 @@ CI runs these checks on Linux and Windows. The scheduled download workflows addi
 
 After changing dependencies, run `bun install` and commit both `package.json` and `bun.lock`. Weekly Dependabot checks cover Bun packages and GitHub Actions. The experimental RSC decoder is pinned to an exact version so updates are reviewed explicitly.
 
+The HTTP client uses wreq-js's `chrome` alias, which selects its newest supported Chrome profile and advances when wreq-js is updated.
+
 Node type definitions are constrained to the latest 25.x release: `thread-stream` still references `TransferListItem`, which was removed in 26.x. This keeps dependency declarations type-checked without `skipLibCheck`.
 
 ## Legal and Ethical Disclaimer

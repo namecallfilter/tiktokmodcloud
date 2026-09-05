@@ -13,11 +13,35 @@ const logger = rootLogger.child({ module: "download" });
 
 const isTTY = process.stderr.isTTY === true;
 
+class TransferError extends Error {}
+
+interface DownloadOptions {
+	outputDirectory?: string;
+	expectedSize?: number;
+}
+
 export async function downloadFile(
 	url: string,
 	referer: string,
 	fileName: string,
-	{ outputDirectory = OUTPUT_DIR, expectedSize }: { outputDirectory?: string; expectedSize?: number } = {},
+	options: DownloadOptions = {},
+): Promise<string> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await downloadAttempt(url, referer, fileName, options);
+		} catch (error) {
+			if (!(error instanceof TransferError) || attempt >= 3) throw error;
+			logger.warn({ err: error, attempt }, "download interrupted; retrying from the beginning");
+			await Bun.sleep(attempt * 1_000);
+		}
+	}
+}
+
+async function downloadAttempt(
+	url: string,
+	referer: string,
+	fileName: string,
+	{ outputDirectory = OUTPUT_DIR, expectedSize }: DownloadOptions,
 ): Promise<string> {
 	if (
 		!fileName.trim() ||
@@ -33,7 +57,11 @@ export async function downloadFile(
 	}
 
 	const session = await getSharedSession();
-	const res = await session.fetch(url, { headers: { Referer: referer, "Accept-Encoding": "identity" } });
+	const res = await session
+		.fetch(url, { headers: { Referer: referer, "Accept-Encoding": "identity" } })
+		.catch((cause) => {
+			throw new TransferError("Download connection failed", { cause });
+		});
 
 	if (!res.ok) {
 		await res.body?.cancel();
@@ -85,22 +113,31 @@ export async function downloadFile(
 		await mkdir(outputDirectory, { recursive: true });
 		await pipeline(
 			async function* () {
-				for await (const chunk of body) {
-					downloaded += chunk.length;
-					if (totalBytes !== undefined && downloaded > totalBytes) {
-						throw new Error(`Download exceeded its expected size of ${totalBytes} bytes`);
-					}
-					if (expectedSize !== undefined && downloaded > expectedSize) {
-						throw new Error(`Download exceeded the source file size of ${expectedSize} bytes`);
-					}
+				const reader = body.getReader();
+				try {
+					while (true) {
+						const { done, value: chunk } = await reader.read().catch((cause) => {
+							throw new TransferError("Download stream interrupted", { cause });
+						});
+						if (done) break;
+						downloaded += chunk.length;
+						if (totalBytes !== undefined && downloaded > totalBytes) {
+							throw new Error(`Download exceeded its expected size of ${totalBytes} bytes`);
+						}
+						if (expectedSize !== undefined && downloaded > expectedSize) {
+							throw new Error(`Download exceeded the source file size of ${expectedSize} bytes`);
+						}
 
-					const elapsed = (performance.now() - startTime) / 1000;
-					bar.update(progressTotal ? downloaded : 1, {
-						received: formatBytes(downloaded),
-						totalSize: progressTotal ? formatBytes(progressTotal) : "???",
-						speed: formatBytes(elapsed > 0 ? downloaded / elapsed : 0),
-					});
-					yield chunk;
+						const elapsed = (performance.now() - startTime) / 1000;
+						bar.update(progressTotal ? downloaded : 1, {
+							received: formatBytes(downloaded),
+							totalSize: progressTotal ? formatBytes(progressTotal) : "???",
+							speed: formatBytes(elapsed > 0 ? downloaded / elapsed : 0),
+						});
+						yield chunk;
+					}
+				} finally {
+					reader.releaseLock();
 				}
 			},
 			createWriteStream(temporaryPath, { flags: "wx" }),
